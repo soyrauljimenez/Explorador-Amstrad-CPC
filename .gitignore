@@ -1,6 +1,7 @@
-# Intermedios del ensamblado. Se publica solo la ROM lista para instalar.
+# Intermedios del ensamblado. Se publican solo las ROMs listas para instalar.
 build/*
 !build/EXPLOR1.ROM
+!build/EXPLOR2.ROM
 rasmoutput.sym
 
 # rasm es obra de Roudoudou y tiene su propia licencia: no se
