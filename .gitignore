@@ -1,0 +1,11 @@
+# Intermedios del ensamblado. Se publica solo la ROM lista para instalar.
+build/*
+!build/EXPLOR1.ROM
+rasmoutput.sym
+
+# rasm es obra de Roudoudou y tiene su propia licencia: no se
+# redistribuye. Ver tools/rasm.md para obtenerlo.
+tools/rasm
+
+# Datos de la tarjeta de desarrollo: personales, no del proyecto.
+m4/
