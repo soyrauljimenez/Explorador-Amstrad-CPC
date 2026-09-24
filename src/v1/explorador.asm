@@ -21,8 +21,6 @@ REP1    equ 20
 REP2    equ 4
 RAM     equ #8000
 m4cmd   equ m4ram          ; se llama a la copia en RAM
-cdbuf   equ   RAM+#0040      ; 3 bytes: tamano, cmd lo, cmd hi
-cdname  equ   RAM+#0043
 cursor  equ   RAM+#0091
 oldcur  equ   RAM+#0092
 top     equ   RAM+#0093
@@ -61,12 +59,27 @@ FONTE   equ   RAM+#024A
 ENTPTR  equ   RAM+#054A
 ENTBUF  equ   RAM+#0662
 ENTTOP  equ   ENTBUF+5400-96  ; margen para un nombre largo mas
+;  El paquete de C_CD: tamano, orden y el nombre, que puede medir 90
+;  caracteres. Pegado al protocolo no cabia y pisaba el cursor.
+cdbuf   equ   ENTBUF+5540    ; 3 bytes: tamano, cmd lo, cmd hi
+cdname  equ   ENTBUF+5543    ; hasta 96 bytes
+titbuf  equ   ENTBUF+5640    ; titulo del disco, solo letras y cifras
+candbuf equ   ENTBUF+5688    ; nombre de un fichero, igual
+clase   equ   ENTBUF+5701    ; 0 .BAS, 1 sin extension, 2 .BIN
+ntot    equ   ENTBUF+5702    ; ficheros de la clase
+sintr   equ   ENTBUF+5703    ; de ellos, los que no son de trampas
+mejorl  equ   ENTBUF+5704    ; coincidencia con el titulo: longitud
+mejori  equ   ENTBUF+5705    ; e indice
+manual  equ   ENTBUF+5706    ; 1 = abrir el disco sin lanzar nada
+ebpos   equ   ENTBUF+5707    ; busqueda de "cara B", 2 bytes
+fbuf    equ   ENTBUF+5710    ; paquetes de fichero: seek, read, close
+fdes    equ   ENTBUF+5718    ; descriptor del .cpr abierto
 m4ram   equ RAM              ; copia ejecutable del protocolo
 
         org   #C000
 
         db    1              ; ROM de fondo
-        db    0,1,0
+        db    1,1,0          ; version 1.1
         dw    tabla
         jp    init           ; entrada 0: inicializacion
         jp    explor         ; entrada 1: |EXPLOR
@@ -177,6 +190,8 @@ bucle   call  lee_entrada
         jr    z,pagaba
         cp    8
         jp    z,busca
+        cp    9
+        jp    z,lista
         jr    bucle
 
 arriba  ld    a,(cursor)
@@ -258,58 +273,627 @@ en_dir  inc   hl             ; saltar el marcador
         jp    bucle
 
 ; --- .dsk: entrar en la imagen y lanzar su cargador ---
-en_dsk  call  cd_a
+;  Con el fuego pulsado un segundo se abre para elegir a mano, que
+;  es la salida cuando el cargador elegido no es el bueno.
+en_dsk  push  hl
+        call  mantiene
+        ld    a,0
+        rla
+        ld    (manual),a
+        pop   hl
+en_ds2  ld    de,extcpr      ; un .cpr solo si lleva un disco dentro
+        call  esext
+        jr    nc,en_ds3
+        call  esconv         ; A: 0 disco, 1 cartucho, 2 no se abre
+        or    a
+        jr    z,en_ds3
+        cp    1
+        jr    nz,en_mal
+        ld    hl,txcart
+        jr    en_av
+en_ds3  push  hl
+        call  cd_a
+        pop   hl
+        ld    a,(resp+3)     ; #FF = no ha podido entrar (el mismo
+        cp    #FF            ; criterio que la ROM del M4 en |CD)
+        jr    z,en_mal
         call  leedir
+        ld    a,(manual)
+        or    a
+        jr    nz,en_lis
         call  buscar
         jp    c,lanza        ; encontrado: a BASIC y a correr
-        xor   a              ; sin cargador: mostrar el contenido
+en_lis  xor   a              ; sin cargador, o a mano: el contenido
         ld    (cursor),a
         ld    (top),a
         call  ruta
         call  redibuja
         jp    bucle
+en_mal  ld    hl,txilegi     ; imagen que no se puede abrir
+en_av   call  aviso
+        jp    bucle
 
-; --- busca el cargador: primero un .BAS, si no un .BIN ---
-;     carry = encontrado, HL = nombre
-buscar  xor   a
-        ld    (modovac),a
-        ld    de,extbas      ; 1: cargador BASIC
-        call  barrer
-        ret   c
-        ld    a,1            ; 2: sin extension
-        ld    (modovac),a
-        call  barrer
-        ret   c
-        xor   a
-        ld    (modovac),a
-        ld    de,extbin      ; 3: binario
-barrer  ld    b,0
-br1     ld    a,(nent)
-        cp    b
-        jr    z,br_no
-        push  bc
-        push  de
-        ld    a,b
-        call  entrada        ; devuelve HL, pero machaca DE
-        pop   de             ; recuperar la extension ANTES de usarla
-        push  de
-        ld    a,(modovac)
-        or    a
-        jr    z,br_ext
-        call  esvac
-        jr    br_fin
-br_ext  call  esext
-br_fin  pop   de
+; --- L: una carpeta se abre; un disco, sin lanzar nada ---
+lista   ld    a,(cursor)
+        call  entrada
+        ld    a,(hl)
+        cp    62
+        jp    z,en_dir
+        call  esdisk
+        jp    nc,bucle
+        ld    a,1
+        ld    (manual),a
+        jr    en_ds2
+
+; --- carry si el fuego sigue pulsado un segundo ---
+;     Con ENTER no hay joystick pulsado y vuelve enseguida.
+mantiene
+        ld    b,50
+mt1     push  bc
+        call  #BD19          ; un cuadro
+        call  #BB24          ; KM GET JOYSTICK
         pop   bc
-        jr    c,br_si
+        and   #20
+        ret   z              ; soltado antes: lanzar
+        djnz  mt1
+        scf
+        ret
+
+; ---------------------------------------------------------------
+;  Elige el cargador del disco recien leido. Carry = HL es el nombre;
+;  sin carry, mostrar la lista para elegir a mano. En orden:
+;
+;   1. DISC, con cualquier extension: es lo que haria un RUN"DISC.
+;   2. Una cara B (FACE B, SIDE B, CARA B, o 2): esas no se lanzan,
+;      las pide el juego cuando hace falta.
+;   3. De la primera clase que tenga algo (.BAS, sin extension,
+;      .BIN), el fichero que se llama como el juego: COMMANDO en
+;      "Commando", MOLECULE en "Molecule Man". Si hay varios, el mas
+;      largo; se exigen tres letras para que una "A" no valga.
+;   4. El primero que no sea de trampas (CHEAT, POKE, TRAIN). Si son
+;      mas de cinco .BIN, se muestra la lista: a ciegas no se acierta.
+;
+;  Medido sobre 936 discos: no cambia ninguno de los 876 que tienen un
+;  solo candidato, y en los ambiguos evita lanzar editores de niveles,
+;  menus de trampas y caras B.
+; ---------------------------------------------------------------
+buscar  call  hazttl
+        ld    c,0            ; 1. DISC
+bu1     push  bc
+        ld    a,c
+        call  pasadisc
+        pop   bc
+        ret   c
+        inc   c
+        ld    a,c
+        cp    3
+        jr    nz,bu1
+        call  esladob        ; 2. cara B
+        jr    c,bu_no
+        ld    c,0            ; 3. la primera clase con algo
+bu2     push  bc
+        ld    a,c
+        call  cuenta
+        pop   bc
+        or    a
+        jr    nz,bu3
+        inc   c
+        ld    a,c
+        cp    3
+        jr    nz,bu2
+bu_no   or    a              ; nada que lanzar: la lista
+        ret
+bu3     call  portitulo
+        ret   c
+        ld    a,(clase)      ; 4. sin trampas; muchos .BIN, a mano
+        cp    2
+        jr    nz,bu4
+        ld    a,(sintr)
+        or    a
+        jr    nz,bu5
+        ld    a,(ntot)
+bu5     cp    6
+        jr    nc,bu_no
+bu4     jp    primero
+
+; --- A = indice -> HL = nombre, A = clase (0 BAS, 1 sin ext., 2 BIN, 3 otra) ---
+clasede call  entrada
+        push  hl
+        ld    de,extbas
+        call  esext
+        pop   hl
+        ld    a,0
+        ret   c
+        push  hl
+        call  esvac
+        pop   hl
+        ld    a,1
+        ret   c
+        push  hl
+        ld    de,extbin
+        call  esext
+        pop   hl
+        ld    a,2
+        ret   c
+        ld    a,3
+        ret
+
+; --- A = clase: carry si hay un DISC en ella, HL = nombre ---
+pasadisc
+        ld    (clase),a
+        ld    b,0
+pd1     ld    a,(nent)
+        cp    b
+        jr    z,pd_no
+        push  bc
+        ld    a,b
+        call  clasede
+        ld    c,a
+        ld    a,(clase)
+        cp    c
+        jr    nz,pd2
+        push  hl
+        call  base
+        ld    a,b
+        cp    4
+        jr    nz,pd3
+        ld    hl,candbuf
+        ld    de,txdisc
+        ld    b,4
+        call  igualn
+        jr    nc,pd3
+        pop   hl
+        pop   bc
+        scf
+        ret
+pd3     pop   hl
+pd2     pop   bc
         inc   b
-        jr    br1
-br_si   ld    a,b
+        jr    pd1
+pd_no   or    a
+        ret
+
+; --- A = clase: A = cuantos hay, (sintr) cuantos no son de trampas ---
+cuenta  ld    (clase),a
+        xor   a
+        ld    (ntot),a
+        ld    (sintr),a
+        ld    b,0
+cu1     ld    a,(nent)
+        cp    b
+        jr    z,cu9
+        push  bc
+        ld    a,b
+        call  clasede
+        ld    c,a
+        ld    a,(clase)
+        cp    c
+        jr    nz,cu2
+        push  hl
+        ld    hl,ntot
+        inc   (hl)
+        pop   hl
+        call  estrampa
+        jr    c,cu2
+        ld    hl,sintr
+        inc   (hl)
+cu2     pop   bc
+        inc   b
+        jr    cu1
+cu9     ld    a,(ntot)
+        ret
+
+; --- en la clase (clase), el que se llama como el juego: carry, HL ---
+portitulo
+        xor   a
+        ld    (mejorl),a
+        ld    b,0
+po1     ld    a,(nent)
+        cp    b
+        jr    z,po9
+        push  bc
+        ld    a,b
+        call  clasede
+        ld    c,a
+        ld    a,(clase)
+        cp    c
+        jr    nz,po8
+        call  base           ; B = letras del nombre
+        ld    a,b
+        cp    3
+        jr    c,po8
+        ld    c,a
+        ld    a,(mejorl)
+        cp    c
+        jr    nc,po8         ; ya hay uno igual de largo o mas
+        push  bc
+        ld    hl,titbuf
+        ld    de,candbuf
+        ld    b,c
+        call  igualn
+        pop   bc
+        jr    nc,po8
+        ld    a,c
+        ld    (mejorl),a
+        pop   bc
+        push  bc
+        ld    a,b
+        ld    (mejori),a
+po8     pop   bc
+        inc   b
+        jr    po1
+po9     ld    a,(mejorl)
+        or    a
+        ret   z
+        ld    a,(mejori)
         call  entrada
         scf
         ret
-br_no   or    a
+
+; --- en la clase (clase), el primero que no sea de trampas; si todos lo
+;     son, el primero. Carry, HL = nombre ---
+primero ld    b,0
+pm1     ld    a,(nent)
+        cp    b
+        jr    z,pm4
+        push  bc
+        ld    a,b
+        call  clasede
+        ld    c,a
+        ld    a,(clase)
+        cp    c
+        jr    nz,pm2
+        call  estrampa
+        jr    c,pm2
+        pop   bc
+        scf
         ret
+pm2     pop   bc
+        inc   b
+        jr    pm1
+pm4     ld    b,0
+pm5     ld    a,(nent)
+        cp    b
+        jr    z,pm_no
+        push  bc
+        ld    a,b
+        call  clasede
+        ld    c,a
+        ld    a,(clase)
+        cp    c
+        pop   bc
+        jr    z,pm_si
+        inc   b
+        jr    pm5
+pm_si   scf
+        ret
+pm_no   or    a
+        ret
+
+; --- HL = nombre: carry si empieza por CHEAT, POKE o TRAIN ---
+estrampa
+        push  hl
+        ld    de,txcheat
+        ld    b,5
+        call  empieza
+        pop   hl
+        ret   c
+        push  hl
+        ld    de,txpoke
+        ld    b,4
+        call  empieza
+        pop   hl
+        ret   c
+        push  hl
+        ld    de,txtrain
+        ld    b,5
+        call  empieza
+        pop   hl
+        ret
+
+; --- carry si el nombre del disco dice cara B: FACE, SIDE o CARA,
+;     espacios o '_', y B o 2 sueltos ---
+esladob ld    hl,cdname
+eb1     ld    a,(hl)
+        or    a
+        ret   z
+        ld    (ebpos),hl
+        ld    de,txface
+        ld    b,4
+        call  empieza
+        jr    c,eb2
+        ld    hl,(ebpos)
+        ld    de,txside
+        ld    b,4
+        call  empieza
+        jr    c,eb2
+        ld    hl,(ebpos)
+        ld    de,txcara
+        ld    b,4
+        call  empieza
+        jr    c,eb2
+eb_sig  ld    hl,(ebpos)
+        inc   hl
+        jr    eb1
+eb2     ld    a,(hl)         ; HL ya esta tras la palabra
+        cp    32
+        jr    z,eb3
+        cp    95             ; '_'
+        jr    nz,eb4
+eb3     inc   hl
+        jr    eb2
+eb4     call  mayus
+        cp    66             ; 'B'
+        jr    z,eb5
+        cp    50             ; '2'
+        jr    nz,eb_sig
+eb5     inc   hl
+        ld    a,(hl)
+        call  alnum
+        jr    c,eb_sig       ; "FACE BALL" no es una cara B
+        scf
+        ret
+
+; --- titbuf = titulo del disco (cdname hasta '(' o '['), solo letras
+;     y cifras en mayusculas ---
+hazttl  ld    hl,cdname
+        ld    de,titbuf
+        ld    b,0
+ti1     ld    a,(hl)
+        or    a
+        jr    z,ti9
+        cp    40             ; '('
+        jr    z,ti9
+        cp    91             ; '['
+        jr    z,ti9
+        call  alnum
+        jr    nc,ti2
+        ld    (de),a
+        inc   de
+        inc   b
+        ld    a,b
+        cp    47
+        jr    nc,ti9
+ti2     inc   hl
+        jr    ti1
+ti9     xor   a
+        ld    (de),a
+        ret
+
+; --- HL = nombre: candbuf = lo de antes del punto, solo letras y
+;     cifras en mayusculas. B = cuantas ---
+base    ld    de,candbuf
+        ld    b,0
+ba1     ld    a,(hl)
+        or    a
+        jr    z,ba9
+        cp    46             ; '.'
+        jr    z,ba9
+        call  alnum
+        jr    nc,ba2
+        ld    (de),a
+        inc   de
+        inc   b
+        ld    a,b
+        cp    12
+        jr    nc,ba9
+ba2     inc   hl
+        jr    ba1
+ba9     xor   a
+        ld    (de),a
+        ret
+
+; --- A a mayuscula; carry si es letra o cifra ---
+alnum   call  mayus
+        cp    48
+        ccf
+        ret   nc
+        cp    58
+        ret   c
+        cp    65
+        ccf
+        ret   nc
+        cp    91
+        ret
+
+; --- carry si HL empieza por los B caracteres de DE (en mayusculas) ---
+;     HL queda tras ellos si coinciden.
+empieza ld    a,(hl)
+        call  mayus
+        ex    de,hl
+        cp    (hl)
+        ex    de,hl
+        jr    nz,em_no
+        inc   hl
+        inc   de
+        djnz  empieza
+        scf
+        ret
+em_no   or    a
+        ret
+
+; --- carry si los B bytes de HL y DE son iguales ---
+igualn  ld    a,(de)
+        cp    (hl)
+        jr    nz,ig_no
+        inc   hl
+        inc   de
+        djnz  igualn
+        scf
+        ret
+ig_no   or    a
+        ret
+
+; ---------------------------------------------------------------
+;  Un .cpr puede ser un cartucho de verdad, que en un CPC clasico no
+;  arranca, o un juego de disco empaquetado como cartucho, en el que
+;  el M4 entra con |CD como en un .dsk. No sirve preguntarle al M4:
+;  con un cartucho de verdad no falla, devuelve el contenido del
+;  ultimo disco que leyo. Asi que se mira dentro: en los convertidos
+;  el banco 3 empieza con el directorio del disco, y en un cartucho
+;  ahi hay codigo.
+;
+;  Fichero: "RIFF", tamano, "AMS!" y bancos de 8 + 16384 bytes, asi
+;  que el banco 3 empieza en 12 + 3 x 16392 = #C024. Antes se mira el
+;  tamano: si el fichero no llega, una lectura corta dejaria en el
+;  bufer del M4 datos de un comando anterior.
+;
+;  HL = nombre, en la carpeta actual. A: 0 disco, 1 cartucho, 2 no se
+;  puede abrir. HL se conserva.
+; ---------------------------------------------------------------
+esconv  push  hl
+        ld    de,cdbuf+4     ; C_OPEN: tamano, #4301, modo, nombre
+        ld    b,0
+ec1     ld    a,(hl)
+        ld    (de),a
+        inc   hl
+        inc   de
+        inc   b
+        or    a
+        jr    nz,ec1
+        ld    a,b
+        add   a,3
+        ld    (cdbuf),a
+        ld    a,#01
+        ld    (cdbuf+1),a
+        ld    a,#43
+        ld    (cdbuf+2),a
+        ld    a,#81          ; FA_READ + #80: nombre largo, no 8.3 (lo
+        ld    (cdbuf+3),a    ; mismo que hace la ROM del M4 con los .sna)
+        ld    hl,cdbuf
+        call  m4cmd
+        ld    a,(resp+4)     ; 0 = abierto
+        or    a
+        jr    z,ec2
+        pop   hl
+        ld    a,2
+        ret
+ec2     ld    a,(resp+3)
+        ld    (fdes),a
+        ld    a,#11          ; C_FSIZE
+        ld    b,3
+        call  fpaq
+        ld    hl,(resp+5)    ; palabra alta del tamano
+        ld    a,h
+        or    l
+        jr    nz,ec3         ; 64 KB o mas: llega de sobra
+        ld    hl,(resp+3)
+        ld    de,#C024+40
+        or    a
+        sbc   hl,de
+        jr    c,ec_car       ; demasiado corto para un banco 3
+ec3     ld    hl,fbuf+4      ; C_SEEK al banco 3
+        ld    (hl),#24
+        inc   hl
+        ld    (hl),#C0
+        inc   hl
+        ld    (hl),0
+        inc   hl
+        ld    (hl),0
+        ld    a,#05
+        ld    b,7
+        call  fpaq
+        ld    hl,fbuf+4      ; C_READ de 40 bytes
+        ld    (hl),40
+        inc   hl
+        ld    (hl),0
+        ld    a,#02
+        ld    b,5
+        call  fpaq
+        ld    a,(resp+3)     ; 0 = leido
+        or    a
+        jr    nz,ec_car
+        call  ecmira         ; se decide antes de cerrar: el cierre
+        jr    nc,ec_car      ; pisa la respuesta
+        xor   a
+        jr    ec_fin
+ec_car  ld    a,1
+ec_fin  push  af
+        ld    a,#04          ; C_CLOSE
+        ld    b,3
+        call  fpaq
+        pop   af
+        pop   hl
+        ret
+
+; --- paquete de fichero: A = orden (#43xx), B = tamano; en fbuf+4 los
+;     datos que siguen al descriptor ---
+fpaq    ld    hl,fbuf
+        ld    (hl),b
+        inc   hl
+        ld    (hl),a
+        inc   hl
+        ld    (hl),#43
+        inc   hl
+        ld    a,(fdes)
+        ld    (hl),a
+        ld    hl,fbuf
+        jp    m4cmd
+
+; --- carry si lo leido es "cb03" y detras una entrada de directorio:
+;     usuario 0-15 y un nombre de 11 caracteres legibles ---
+ecmira  ld    hl,resp+4
+        ld    de,txcb03
+        ld    b,4
+        call  igualn
+        jr    nc,ek_no
+        ld    a,(resp+12)
+        cp    16
+        jr    nc,ek_no
+        ld    a,(resp+13)    ; el nombre no empieza por espacio
+        and   #7F
+        cp    33
+        jr    c,ek_no
+        ld    hl,resp+13
+        ld    b,11
+ek1     ld    a,(hl)
+        and   #7F
+        cp    32
+        jr    c,ek_no
+        cp    127
+        jr    nc,ek_no
+        inc   hl
+        djnz  ek1
+        scf
+        ret
+ek_no   or    a
+        ret
+
+txcb03  db    "cb03"
+txdisc  db    "DISC"
+txcheat db    "CHEAT"
+txpoke  db    "POKE"
+txtrain db    "TRAIN"
+txface  db    "FACE"
+txside  db    "SIDE"
+txcara  db    "CARA"
+txcart  db    "Cartucho: solo CPC Plus",0
+txilegi db    "No se puede abrir",0
+
+; --- aviso en la linea de la ruta: HL = mensaje ---
+aviso   call  avisa          ; lo pinta cada version a su manera
+        ld    b,100          ; dos segundos y se repone la ruta
+av2     push  bc
+        call  #BD19
+        pop   bc
+        djnz  av2
+        jp    ruta
+
+; --- el aviso, en amarillo sobre la linea de la ruta ---
+avisa   push  hl
+        ld    b,2
+        ld    c,3
+        call  setpos
+        ld    hl,tabama
+        ld    (ptab),hl
+        pop   hl
+        call  putstr
+ai1     ld    a,(ccol)       ; borrar el resto de la ruta
+        cp    29
+        ret   nc
+        ld    a,32
+        call  putc
+        jr    ai1
 
 ; --- HL = nombre. Carry si no tiene extension ---
 ;     El nombre puede llegar como "JUEGO." o como "JUEGO.   ",
@@ -1339,6 +1923,10 @@ lee_entrada
         jr    z,li_bus
         cp    102            ; f
         jr    z,li_bus
+        cp    76             ; L: abrir el disco sin lanzar nada
+        jp    z,li_lst
+        cp    108            ; l
+        jp    z,li_lst
         jr    li_joy
 li_up   ld    a,1
         ret
@@ -1353,6 +1941,8 @@ li_bk   ld    a,5
 li_pu   ld    a,6
         ret
 li_pd   ld    a,7
+        ret
+li_lst  ld    a,9
         ret
 li_bus  ld    a,8
         ret

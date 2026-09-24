@@ -33,7 +33,7 @@ las dos se llaman con `|EXPLOR`.
 | Nombre visible | ~13 caracteres | 37 caracteres | **58 caracteres** |
 | Juegos por página | — | 16 | 14 |
 | Colores | 4 | 4 | 4, los mismos que la v1 |
-| ROM | — | [`EXPLOR1.ROM`](build/EXPLOR1.ROM) | [`EXPLOR2.ROM`](build/EXPLOR2.ROM) |
+| ROM | — | [`EXPLOR1.ROM`](build/EXPLOR1.ROM) (v1.1) | [`EXPLOR2.ROM`](build/EXPLOR2.ROM) (v2.1) |
 
 **Cuál elegir.** La v2, salvo que prefieras la letra del sistema. En una
 biblioteca de 987 juegos, la v1 corta el 35 % de los nombres y la v2 el
@@ -83,8 +83,12 @@ corregir una letra es cambiar su línea y regenerar el include.
 
 - **Nombres completos.** `Abu Simbel Profanation (S) (1986) (Trainer).dsk`
   se lee entero, sin códigos ni abreviaturas.
-- **Arranque directo.** Fuego sobre un `.dsk` entra en la imagen, busca
+- **Arranque directo.** Fuego sobre un `.dsk` entra en la imagen, elige
   el cargador y lo ejecuta. Sin pasos intermedios.
+- **Elegir a mano cuando haga falta.** La tecla `L`, o mantener fuego un
+  segundo, abre el disco y enseña sus ficheros sin lanzar nada.
+- **Juegos en `.cpr`.** Los juegos de disco empaquetados como cartucho
+  se abren y se lanzan como un `.dsk`, también en un CPC clásico.
 - **Joystick o teclado.** Cursores para elegir, izquierda y derecha para
   paginar, dos botones para entrar y volver.
 - **Ordenación alfabética**, con las carpetas agrupadas arriba.
@@ -101,6 +105,7 @@ corregir una letra es cambiar su línea y regenerar el include.
 | Arriba / abajo | Elegir |
 | Izquierda / derecha | Página |
 | FUEGO 1 / ENTER | Abrir carpeta o **ejecutar juego** |
+| `L` / FUEGO 1 un segundo | Abrir el disco **sin lanzarlo**, para elegir a mano |
 | FUEGO 2 / DEL | Volver atrás |
 | `F` | Buscar |
 | ESC | Salir y reiniciar |
@@ -119,10 +124,42 @@ control. **BASIC hace el `RUN`** en la línea siguiente:
 40 END
 ```
 
-Dentro de un `.dsk` busca el cargador en tres pasadas: un `.BAS`, un
-fichero con **extensión en blanco** (muy común en los discos de CPC), y
-un `.BIN`. Si no encuentra ninguno, muestra el contenido para elegir a
-mano. Los `.ROM` no se ejecutan: son imágenes para un slot de la placa.
+### Qué cargador elige
+
+Candidatos son los `.BAS`, los ficheros con **extensión en blanco** (muy
+comunes en los discos de CPC) y los `.BIN`, por ese orden. Cuando hay
+más de uno decide así:
+
+1. Un fichero **`DISC`**, que es lo que haría un `RUN"DISC`.
+2. Si el disco es una **cara B** (*Face B*, *Side B*, *Cara B* o `2`),
+   no lanza nada y enseña la lista: esas caras las pide el juego.
+3. El que **se llama como el juego**: `COMMANDO` en *Commando*,
+   `MOLECULE` en *Molecule Man*. Con tres letras como mínimo.
+4. El primero que **no sea de trampas** (`CHEAT`, `POKE`, `TRAIN`). Si
+   son más de cinco `.BIN`, enseña la lista: ahí no se acierta a ciegas.
+
+Medido sobre una biblioteca de 936 discos, el 93,6 % tiene un solo
+candidato y no hay nada que decidir. En los ambiguos, estas reglas evitan
+lanzar editores de niveles, menús de trampas y caras B. Si aun así elige
+mal, `L` o el fuego largo abren el disco para elegir a mano.
+
+Si no hay ningún candidato, muestra el contenido. Los `.ROM` no se
+ejecutan: son imágenes para un slot de la placa.
+
+### Juegos en `.cpr`
+
+Un `.cpr` puede ser dos cosas:
+
+- **Un juego de disco empaquetado como cartucho**, para jugarlo en una
+  GX4000. El M4 entra en él como en un `.dsk` y el explorador lo lanza
+  igual, también en un 464 o un 6128 clásicos.
+- **Un cartucho de verdad**, que necesita el hardware de un CPC Plus. El
+  explorador avisa con *Cartucho: solo CPC Plus* y no lo abre.
+
+No basta con preguntar al M4: con un cartucho de verdad no falla, sino
+que devuelve el contenido del último disco que leyó. Así que el
+explorador mira dentro del fichero: en los convertidos, el banco 3 empieza
+con el directorio del disco; en un cartucho, ahí hay código.
 
 ## Instalación
 
@@ -195,11 +232,31 @@ python3 tools/fuente5.py > src/v2/glifos5.inc
 - **La heurística del cargador fallará en algún disco.** Cuando pase, el
   listado interno es la red de seguridad.
 - **130 entradas por directorio** como máximo.
+- **Los cartuchos de verdad no se lanzan**, ni siquiera en un Plus: el M4
+  tiene `|CTRUP` y `|CTR` para eso, pero sin un Plus no se ha podido
+  probar.
 - **v2: los nombres de más de 58 caracteres se cortan** con `..` al final.
   En la M, la W, la m y la w los trazos llegan a la columna de separación
   y rozan la letra siguiente: con 4 píxeles no caben sus tres patas.
 - **Probado en un CPC 464** con ROM baja de 6128 y el M4 en el slot 6.
   Si lo usas en otra configuración, cuenta qué tal.
+
+## Historial
+
+**v1.1 y v2.1** — lo mismo en las dos:
+
+- Elección del cargador más fina: `DISC`, nombre del juego, fuera las
+  trampas y las caras B. No cambia ningún disco con un solo candidato.
+- `L` o fuego largo para abrir un disco sin lanzarlo y elegir a mano.
+- Juegos en `.cpr` convertidos desde disco; aviso con los cartuchos de
+  verdad.
+- Corregido: los discos con nombres de más de 77 caracteres pisaban las
+  variables del cursor al entrar en ellos.
+
+**v2.0** — Mode 1 a 64 columnas con fuente propia de 5×10 y los colores
+de la v1.
+
+**v1.0** — primera versión: Mode 1 a 40 columnas.
 
 ## Agradecimientos
 
@@ -212,6 +269,9 @@ algo no funciona.
 A **Antero Martínez**, por las pistas para sacar cuatro colores en
 Mode 2. Tirando de ese hilo se exploraron los rasters, las franjas por
 interrupción y el entrelazado, y de ahí salió la v2.
+
+A **Jose Antonio**, por la sugerencia de cargar juegos en `.cpr`, que
+llevó a las versiones 1.1 y 2.1.
 
 Nada de esto tendría sentido sin una comunidad que siga encendiendo
 estos ordenadores.
