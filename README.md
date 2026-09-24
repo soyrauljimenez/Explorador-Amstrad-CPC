@@ -8,7 +8,7 @@ directamente** al pulsar fuego sobre una imagen `.dsk`.
 
 ![La v2 listando una carpeta](docs/v2-explorador.png)
 
-*La v2 en una carpeta real. Captura generada con la misma fuente y la
+*La v2 listando una carpeta. Captura generada con la misma fuente y la
 misma maquetación que usa la ROM.*
 
 ## Por qué existe
@@ -35,9 +35,10 @@ las dos se llaman con `|EXPLOR`.
 | Colores | 4 | 4 | 4, los mismos que la v1 |
 | ROM | — | [`EXPLOR1.ROM`](build/EXPLOR1.ROM) (v1.1) | [`EXPLOR2.ROM`](build/EXPLOR2.ROM) (v2.1) |
 
-**Cuál elegir.** La v2, salvo que prefieras la letra del sistema. En una
-biblioteca de 987 juegos, la v1 corta el 35 % de los nombres y la v2 el
-3,7 %; los que no caben terminan en `..`.
+**Cuál elegir.** La v2, salvo que prefieras la letra del sistema: enseña
+58 caracteres de cada nombre frente a los 37 de la v1, y los nombres de
+las colecciones de juegos suelen ser largos (título, país, año, editor…).
+Los que no caben terminan en `..`.
 
 ### v1: la letra del sistema
 
@@ -138,9 +139,9 @@ más de uno decide así:
 4. El primero que **no sea de trampas** (`CHEAT`, `POKE`, `TRAIN`). Si
    son más de cinco `.BIN`, enseña la lista: ahí no se acierta a ciegas.
 
-Medido sobre una biblioteca de 936 discos, el 93,6 % tiene un solo
-candidato y no hay nada que decidir. En los ambiguos, estas reglas evitan
-lanzar editores de niveles, menús de trampas y caras B. Si aun así elige
+Lo habitual es que un disco tenga un solo candidato, y entonces no hay
+nada que decidir. Estas reglas solo entran en juego con los ambiguos,
+donde evitan lanzar un editor de niveles, un menú de trampas o una cara B. Si aun así elige
 mal, `L` o el fuego largo abren el disco para elegir a mano.
 
 Si no hay ningún candidato, muestra el contenido. Los `.ROM` no se
