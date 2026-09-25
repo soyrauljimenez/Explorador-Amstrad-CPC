@@ -129,6 +129,11 @@ verdad sirve igual: se escribe, ENTER busca y ESC cierra.
 Se guarda en `/EXPLOR.CFG`, en la raíz de la tarjeta, y se recuerda al
 volver a encender.
 
+![La configuración](docs/v2-configuracion.png)
+
+*Captura sacada de la ROM: el mismo código Z80 ejecutado en un emulador,
+con su memoria de pantalla convertida a imagen.*
+
 ## Cómo arranca los juegos
 
 El explorador carga el fichero elegido y lo arranca él mismo, del mismo
