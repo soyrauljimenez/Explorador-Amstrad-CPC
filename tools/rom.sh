@@ -1,8 +1,9 @@
 #!/bin/bash
 # Ensambla una version del explorador y, si se indica la placa, la sube.
 #
-#   ./tools/rom.sh v2                    solo ensamblar: build/EXPLOR2.ROM
+#   ./tools/rom.sh                       solo ensamblar: build/EXPLOR2.ROM
 #   M4=192.168.1.42 ./tools/rom.sh v2 12 ensamblar y subir al slot 12
+#   RESET=s M4=...                       y reiniciar el M4 sin preguntar
 #
 # La subida manda 'slotnum' antes que el fichero: el M4 procesa los
 # campos en orden y, al reves, la ROM iria a parar al slot 0. Despues
@@ -10,7 +11,7 @@
 # aunque no haya guardado nada.
 set -e
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
-VER="${1:?uso: $0 v1|v2 [slot] [nombre]}"
+VER="${1:-v2}"
 SLOT="${2:-12}"
 NOMBRE="${3:-EXPLORADOR}"
 SRC="$DIR/src/$VER/explorador.asm"
@@ -19,7 +20,8 @@ OUT="$DIR/build/EXPLOR${VER#v}.ROM"
 
 mkdir -p "$DIR/build"
 rm -f "$OUT"                 # si el ensamblado falla, que no quede el anterior
-(cd "$DIR/src/$VER" && "$DIR/tools/rasm" explorador.asm -ob "$OUT" >/dev/null)
+SAL=$(cd "$DIR/src/$VER" && "$DIR/tools/rasm" explorador.asm -ob "$OUT" 2>&1) ||
+    { echo "$SAL" | grep -i "error\|\[explorador" ; echo "ERROR: el ensamblado fallo"; exit 1; }
 rm -f "$DIR/src/$VER/rasmoutput.sym"
 [ -f "$OUT" ] || { echo "ERROR: el ensamblado no genero salida"; exit 1; }
 TAM=$(wc -c < "$OUT" | tr -d ' ')
@@ -41,6 +43,7 @@ for n,v in re.findall(r'Rom slot (\d+)</td><td[^>]*>(.*?)</td>', h):
     v=re.sub(r'<!--.*?-->','',v); v=re.sub(r'<[^>]*>','',v).strip()
     if v: print(f'  slot {n:>2}: {v}')
 "
-read -p "reiniciar el M4? [s/N] " r
+r="$RESET"                   # RESET=s reinicia sin preguntar
+[ -n "$r" ] || read -p "reiniciar el M4? [s/N] " r
 [ "$r" = "s" ] || exit 0
 curl -s -m 10 "http://$M4/config.cgi?mres=M4+Reset" -o /dev/null -w "reinicio  : http:%{http_code}\n"

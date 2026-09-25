@@ -137,32 +137,43 @@ def filas(c):
 
 
 def tabla():
-    """Glifos ya desplazados, listos para Mode 1.
+    """Glifos ya desplazados, listos para Mode 1, solo con sus lineas de tinta.
 
     Con celdas de 5 pixeles la letra empieza en cualquiera de los 4
-    pixeles de un byte y ocupa siempre dos bytes. Para cada glifo, cada
-    desplazamiento s (0-3) y cada una de las 10 filas se guardan esos
-    dos bytes ya en formato Mode 1 con tinta 3 (los dos planos a 1):
-    el color se saca luego con un AND (#F0 tinta 1, #0F tinta 2).
-    Orden: glifo, desplazamiento, fila, byte izquierdo y derecho.
+    pixeles de un byte y ocupa siempre dos bytes. Para cada glifo y cada
+    desplazamiento s (0-3) se guardan los dos bytes de cada linea con
+    tinta, ya en formato Mode 1 con tinta 3 (los dos planos a 1): el
+    color se saca luego con un AND (#F0 tinta 1, #0F tinta 2).
+
+    Las lineas vacias (el interlineado, y casi siempre los rasgos de
+    abajo) no se guardan: GDESC dice cual es la primera y cuantas hay.
+    Orden: glifo, desplazamiento, linea, byte izquierdo y derecho.
     """
     def m1(n):
         return (n << 4) | n          # nibble de pixeles -> tinta 3
     print("; Generado por tools/fuente5.py: no editar a mano.")
-    print("; 96 glifos x 4 desplazamientos x 10 filas x 2 bytes.")
+    print("; Por glifo y desplazamiento, 2 bytes por cada linea con tinta.")
     for i in range(32, 128):
         c = chr(i)
         vis = c if 32 < i < 127 else ("espacio" if i == 32 else "bloque")
+        f, n = rango(c)
         for d in range(4):
             v = []
-            for f in filas(c):
+            for fila in filas(c)[f:f + n]:
                 p = 0
-                for k, px in enumerate(f):
+                for k, px in enumerate(fila):
                     if px == '#':
                         p |= 16 >> k
                 p <<= 3 - d
                 v += [m1(p >> 4), m1(p & 15)]
-            print(f"        db    {','.join('#%02X' % x for x in v)}   ; {vis} +{d}")
+            if v:
+                print(f"        db    {','.join('#%02X' % x for x in v)}   ; {vis} +{d}")
+
+
+def rango(c):
+    """primera linea con tinta y cuantas hay"""
+    llenas = [k for k, fila in enumerate(filas(c)) if '#' in fila]
+    return (llenas[0], llenas[-1] - llenas[0] + 1) if llenas else (0, 0)
 
 
 def celdas():
@@ -175,24 +186,20 @@ def celdas():
 
 
 def descriptores():
-    """Por glifo, 8 bytes: donde empieza su primera linea con tinta,
-    cuantas lineas tiene y donde empieza el glifo entero.
-
-    La linea 0 es el interlineado y siempre esta vacia; una minuscula
-    sin rasgos ocupa solo las lineas 3-7. Pintar solo las lineas con
-    tinta ahorra casi la mitad del trabajo en un nombre tipico.
+    """Por glifo, 4 bytes: donde empiezan sus datos (desplazamiento 0),
+    su primera linea con tinta y cuantas lineas tiene. Los datos de cada
+    desplazamiento van seguidos: el s-esimo empieza s * 2 * lineas mas alla.
     """
-    print("; por glifo: dw GLIFOS+80g+2f, dw 80f, db lineas, db 0, dw GLIFOS+80g")
+    print("; por glifo: dw datos, db primera linea, db lineas")
     print("GDESC")
+    pos = 0
     for i in range(32, 128):
         c = chr(i)
-        g = i - 32
-        llenas = [k for k, fila in enumerate(filas(c)) if '#' in fila]
-        f, n = (llenas[0], llenas[-1] - llenas[0] + 1) if llenas else (0, 0)
+        f, n = rango(c)
         vis = c if 32 < i < 127 else ("espacio" if i == 32 else "bloque")
-        print(f"        dw    GLIFOS+{80*g+2*f},{80*f}")
-        print(f"        db    {n},0")
-        print(f"        dw    GLIFOS+{80*g}   ; {vis}: lineas {f}-{f+n-1}")
+        print(f"        dw    GLIFOS+{pos}")
+        print(f"        db    {f},{n}   ; {vis}")
+        pos += 4 * 2 * n
 
 
 def main():

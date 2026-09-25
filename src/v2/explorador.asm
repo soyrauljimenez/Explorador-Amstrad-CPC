@@ -16,6 +16,28 @@ M4ROM   equ 6
 MAXLEN  equ 75   ; pedir siempre el largo; el recorte lo hago yo
 MAXST   equ 90               ; el nombre mas largo de la biblioteca mide 86
 MAXENT  equ 130              ; 130 x 41 = 5330 bytes, muy por debajo del firmware
+T_TIT   equ 0                ; textos traducidos: ver 'texto'
+T_H1    equ 1                ; ayuda, fila de arriba (4)
+T_H5    equ 5                ; ayuda, fila de abajo (4)
+T_BUS   equ 9
+T_CART  equ 10
+T_ILEG  equ 11
+T_RUN   equ 12
+T_CFG   equ 13
+T_IDI   equ 14
+T_VAL   equ 15
+T_CI1   equ 16               ; instrucciones de la configuracion (4)
+T_NO1   equ 20               ; nota sobre L y el fuego largo (2)
+T_RES   equ 22
+T_BUSG  equ 23
+T_NADA  equ 24
+T_BUSC  equ 25
+T_PBUS  equ 26               ; ventana de busqueda: titulos
+T_PBUSG equ 27
+T_KTXT  equ 28
+T_KAY1  equ 29               ; dos lineas de ayuda
+T_NCAR  equ 31               ; "Sin resultados: N carpetas, M ficheros"
+T_NFIC  equ 32
 VISIBLE equ 14               ; filas de 10 lineas: caben 14 entradas
 FILA0   equ 5                ; primera fila de lista (base 0)
 COL0    equ 1                ; primera columna de lista
@@ -55,7 +77,7 @@ sj      equ   cmdbuf+7
 tmpptr  equ   cmdbuf+8
 sk      equ   cmdbuf+10
 sgap    equ   cmdbuf+11
-bufbus  equ   cmdbuf+16    ; texto tecleado en la busqueda       ; longitud de la ruta de partida       ; pasada actual de la busqueda       ; KL FIND COMMAND exige el nombre en RAM
+bufbus  equ   cmdbuf+16      ; texto tecleado en la busqueda
 resp    equ   RAM+#011E
 ENTPTR  equ   RAM+#054A
 ENTBUF  equ   RAM+#0662
@@ -100,18 +122,58 @@ manual  equ   ENTBUF+5706    ; 1 = abrir el disco sin lanzar nada
 ebpos   equ   ENTBUF+5707    ; busqueda de "cara B", 2 bytes
 fbuf    equ   ENTBUF+5710    ; paquetes de fichero: seek, read, close
 fdes    equ   ENTBUF+5718    ; descriptor del .cpr abierto
+idioma  equ   ENTBUF+5720    ; 0 castellano, 1 ingles
+idiold  equ   ENTBUF+5721    ; el de antes de entrar en la configuracion
+enres   equ   ENTBUF+5722    ; 1 = la lista son resultados de una busqueda
+buslen  equ   ENTBUF+5723    ; largo del texto buscado
+pila    equ   ENTBUF+5724    ; cima de la pila de carpetas pendientes, 2 bytes
+pieest  equ   ENTBUF+5726    ; que hay en el pie de cada pagina: 0 ayuda,
+                             ; 1 nombre largo (2 bytes, una por pagina)
+modog   equ   ENTBUF+5728    ; 1 = busqueda en toda la biblioteca
+lleno   equ   ENTBUF+5729    ; la busqueda se paro por falta de sitio
+ultbar  equ   ENTBUF+5730    ; ultima '/' de un resultado, 2 bytes
+wkend   equ   ENTBUF+5732    ; fin de walkpath al construirla, 2 bytes
+bpl     equ   ENTBUF+5734    ; largo de basepath
+basepath equ  ENTBUF+5740    ; carpeta de partida, con '/' final (100)
+pathsav equ   ENTBUF+5840    ; donde se empezo a buscar (100)
+walkpath equ  ENTBUF+5940    ; carpeta que se recorre ahora (130)
+PILATOP equ   ENTBUF+5400    ; la pila crece hacia abajo desde aqui
+kfil    equ   ENTBUF+6070    ; teclado en pantalla: fila (0-4) y
+kcol    equ   ENTBUF+6071    ; tecla dentro de la fila de la elegida
+gs      equ   ENTBUF+6072    ; glifo en curso: desplazamiento, byte,
+gb      equ   ENTBUF+6073    ; primera linea con tinta y cuantas
+gf      equ   ENTBUF+6074
+gk      equ   ENTBUF+6075
+g20     equ   ENTBUF+6076    ; un glifo entero, 10 lineas x 2 bytes
+ksel    equ   ENTBUF+6096    ; la tecla elegida, en TECLAS (2)
+kant    equ   ENTBUF+6098    ; la que lo era antes de moverse (2)
+kold    equ   ENTBUF+6100    ; (2)
+kx0     equ   ENTBUF+6102    ; x de la tecla que se pinta (2)
+kcx     equ   ENTBUF+6104    ; centro de la tecla de partida (2)
+kdist   equ   ENTBUF+6106    ; la menor distancia hasta ahora (2)
+kly     equ   ENTBUF+6108    ; linea de barrido que se compone
+kyd     equ   ENTBUF+6109    ; linea dentro de la tecla
+krl     equ   ENTBUF+6110    ; linea dentro del rotulo
+kpen    equ   ENTBUF+6111    ; color del recuadro
+kmode   equ   ENTBUF+6112    ; 1 = es la elegida
+gcar    equ   ENTBUF+6113    ; busqueda en todo: carpetas recorridas
+gfic    equ   ENTBUF+6114    ; y entradas leidas (2)
+KBY0    equ   58             ; lineas de las filas 3 a 10 de la ventana
+KBY1    equ   137
 m4ram   equ RAM              ; copia ejecutable del protocolo
 
         org   #C000
 
         db    1              ; ROM de fondo
-        db    2,1,0          ; version 2.1
+        db    2,2,0          ; version 2.2
         dw    tabla
         jp    init           ; entrada 0: inicializacion
         jp    explor         ; entrada 1: |EXPLOR
+        jp    explor         ; entrada 2: |E, lo mismo en corto
 
 tabla   db    "EXPLORADO",'R'+#80
         db    "EXPLO",'R'+#80
+        db    'E'+#80
         db    0
 
 ; --- no reserva memoria: se usa mientras corre y se suelta al
@@ -119,11 +181,17 @@ tabla   db    "EXPLORADO",'R'+#80
 init    ret
 
 ; --- |EXPLOR,@a$ ---
-explor  or    a
-        ret   z              ; sin parametros
+;  Dos formas de llamarlo:
+;   |EXPLOR        el explorador lanza el juego el mismo (ver 'directo')
+;   |EXPLOR,@a$    deja el fichero en a$ y BASIC hace el RUN, como en
+;                  las primeras versiones
+;  En el modo directo descr vale 0.
+explor  ld    hl,0
+        or    a
+        jr    z,ex1
         ld    l,(ix+0)
         ld    h,(ix+1)
-        ld    (descr),hl     ; descriptor de a$
+ex1     ld    (descr),hl     ; descriptor de a$, o 0
 
 ;  Una ROM no inicializa su RAM: al entrar, las variables tienen
 ;  lo que dejara el programa anterior. Con 'pagvis' o 'top' sucios
@@ -192,6 +260,12 @@ start   ld    a,1
 ;  la biblioteca. Si esa carpeta no existe nos quedamos en la raiz,
 ;  que es un sitio sensato. Luego se mide la ruta resultante: ese
 ;  sera el tope del que no se puede subir, sin numeros magicos.
+        xor   a              ; ni resultados, ni texto buscado, y en el
+        ld    (enres),a      ; pie de las dos paginas la ayuda
+        ld    (buslen),a
+        ld    (pieest),a
+        ld    (pieest+1),a
+        call  leecfg         ; el idioma guardado, si lo hay
         ld    hl,barra0
         call  cd_a
         ld    hl,raiz
@@ -232,6 +306,10 @@ bucle   call  lee_entrada
         jp    z,busca
         cp    9
         jp    z,lista
+        cp    10
+        jp    z,config
+        cp    11
+        jp    z,buscag
         jr    bucle
 
 arriba  ld    a,(cursor)
@@ -293,19 +371,29 @@ salir   call  #BB03          ; KM RESET: vaciar el teclado
         call  cd_a
         call  restaura
         ld    hl,(descr)     ; a$ = "" -> BASIC no ejecuta nada
+        ld    a,h
+        or    l
+        ret   z              ; modo directo: sin a$, de vuelta a BASIC
         ld    (hl),0
         ret
 
 entrar  ld    a,(cursor)
         call  entrada
-        ld    a,(hl)
+        ld    de,extrom      ; un .ROM es una imagen para un slot de
+        call  esext          ; la placa, no un programa: no se lanza
+        jp    c,bucle
+        ld    a,(enres)      ; un resultado: primero a su carpeta
+        or    a
+        jr    z,en_0
+        call  resuelve
+        ld    a,(resp+3)
+        cp    #FF
+        jp    z,en_mal
+en_0    ld    a,(hl)
         cp    62             ; '>' = directorio
         jr    z,en_dir
         call  esdisk
         jr    c,en_dsk       ; .dsk: arrancar el juego directamente
-        ld    de,extrom      ; un .ROM es una imagen para un slot de
-        call  esext          ; la placa, no un programa: no se lanza
-        jp    c,bucle
         jp    lanza          ; fichero suelto: ejecutarlo
 en_dir  inc   hl             ; saltar el marcador
         call  cd_a
@@ -329,7 +417,8 @@ en_ds2  ld    de,extcpr      ; un .cpr solo si lleva un disco dentro
         jr    z,en_ds3
         cp    1
         jr    nz,en_mal
-        ld    hl,txcart
+        ld    a,T_CART
+        call  texto
         jr    en_av
 en_ds3  push  hl
         call  cd_a
@@ -349,21 +438,30 @@ en_lis  xor   a              ; sin cargador, o a mano: el contenido
         call  ruta
         call  redibuja
         jp    bucle
-en_mal  ld    hl,txilegi     ; imagen que no se puede abrir
+en_mal  ld    a,T_ILEG       ; imagen que no se puede abrir
+        call  texto
 en_av   call  aviso
         jp    bucle
 
-; --- L: una carpeta se abre; un disco, sin lanzar nada ---
+; --- L: solo sobre un juego (.dsk o .cpr), que se abre sin lanzar
+;     nada. Sobre una carpeta o un fichero suelto no hace nada ---
 lista   ld    a,(cursor)
         call  entrada
         ld    a,(hl)
         cp    62
-        jp    z,en_dir
+        jp    z,bucle
         call  esdisk
         jp    nc,bucle
-        ld    a,1
+        ld    a,(enres)      ; un resultado: primero a su carpeta
+        or    a
+        jr    z,ls0
+        call  resuelve
+        ld    a,(resp+3)
+        cp    #FF
+        jp    z,en_mal
+ls0     ld    a,1
         ld    (manual),a
-        jr    en_ds2
+        jp    en_ds2
 
 ; --- carry si el fuego sigue pulsado un segundo ---
 ;     Con ENTER no hay joystick pulsado y vuelve enseguida.
@@ -907,8 +1005,6 @@ txtrain db    "TRAIN"
 txface  db    "FACE"
 txside  db    "SIDE"
 txcara  db    "CARA"
-txcart  db    "Cartucho: solo CPC Plus",0
-txilegi db    "No se puede abrir",0
 
 ; --- aviso en la linea de la ruta: HL = mensaje ---
 aviso   call  avisa          ; lo pinta cada version a su manera
@@ -1019,7 +1115,14 @@ extbin  db    "BIN"
 
 ;  No se sube por encima de la carpeta de partida: se compara la
 ;  longitud de la ruta actual con la que se midio al arrancar.
-atras   call  midepath
+atras   ld    a,(enres)      ; en resultados: a donde se busco
+        or    a
+        jr    z,at0
+        ld    hl,pathsav
+        call  cd_a
+        call  recarga
+        jp    bucle
+at0     call  midepath
         ld    a,(baselen)
         cp    c
         jp    nc,bucle       ; ya estamos en el tope
@@ -1034,7 +1137,14 @@ recarga call  leedir
         ld    (top),a
         jp    redibuja
 
-cd_a    ld    a,#08          ; C_CD, escrito a mano: cdbuf esta en RAM
+;  El M4 solo acepta como ruta absoluta la raiz: "/ROMS/R" lo rechaza
+;  (#FF) salvo que se este ya en la raiz. Asi que una ruta que empieza
+;  por '/' se recorre por partes: "/", "ROMS", "R", como se navega a
+;  mano. Si una parte falla, resp+3 queda en #FF.
+cd_a    ld    a,(hl)
+        cp    47
+        jr    z,cdabs
+cd_rel  ld    a,#08          ; C_CD, escrito a mano: cdbuf esta en RAM
         ld    (cdbuf+1),a
         ld    a,#43
         ld    (cdbuf+2),a
@@ -1049,101 +1159,1192 @@ cda1    ld    a,(hl)
         jr    nz,cda1
         ld    a,b
         add   a,2
-        ld    (cdbuf),a
+cd_env  ld    (cdbuf),a
         ld    hl,cdbuf
         jp    m4cmd
+
+cdabs   push  hl
+        ld    hl,barra0
+        call  cd_rel
+        pop   hl
+ca1     ld    a,(hl)         ; las '/' que separan
+        cp    47
+        jr    nz,ca2
+        inc   hl
+        jr    ca1
+ca2     or    a
+        ret   z
+        ld    de,cdname      ; la parte siguiente
+        ld    b,3
+ca3     ld    a,(hl)
+        or    a
+        jr    z,ca4
+        cp    47
+        jr    z,ca4
+        ld    (de),a
+        inc   hl
+        inc   de
+        inc   b
+        jr    ca3
+ca4     xor   a
+        ld    (de),a
+        push  hl
+        ld    a,#08
+        ld    (cdbuf+1),a
+        ld    a,#43
+        ld    (cdbuf+2),a
+        ld    a,b
+        call  cd_env
+        pop   hl
+        ld    a,(resp+3)
+        cp    #FF
+        ret   z
+        jr    ca1
 
 ; --- HL = nombre. Carry si termina en .DSK o .CPR ---
 ; ---------------------------------------------------------------
 ;  Buscador. Se escribe sobre la linea de la ruta y al terminar se
 ;  repinta. Salta a la primera entrada que empiece por lo tecleado.
 ; ---------------------------------------------------------------
-busca   ld    hl,txtbuf
-        ld    b,60
-bs0     ld    (hl),32
-        inc   hl
-        djnz  bs0
-        ld    hl,tabama
-        ld    (ptab),hl
-        ld    b,2
-        ld    c,3
-        ld    a,60
-        call  pfila
-        ld    b,2
-        ld    c,3
-        call  setpos
-        ld    hl,txtbus
-        call  putstr
-
-        ld    hl,bufbus
-        ld    c,0
-bs1     call  #BB06          ; KM WAIT CHAR
-        cp    13
-        jr    z,bs_fin
-        cp    27
-        jr    z,bs_sal
-        cp    252
-        jr    z,bs_sal
-        cp    127
-        jr    z,bs_del
+;  F busca en la carpeta: el texto en cualquier parte del nombre, sin
+;  distinguir mayusculas, desde el elegido hacia abajo y dando la
+;  vuelta. El texto se queda escrito: F y ENTER otra vez, la siguiente.
+;  G busca en toda la biblioteca (ver 'global').
+;
+;  Las dos abren una ventana sobre la lista con un teclado como el del
+;  CPC 464, para escribir con el joystick: se elige tecla con el mando
+;  y FUEGO la pulsa, SALTAR borra. El teclado de verdad sigue valiendo.
+busca   xor   a
+        jr    bsc0
+buscag  ld    a,(enres)      ; se recuerda de donde se sale, salvo si ya
+        or    a              ; se estaba viendo una busqueda
+        call  z,guardaruta
+        ld    a,1
+bsc0    ld    (modog),a
+        ld    a,(pagvis)     ; la ventana, sobre la pagina que se ve
+        ld    (pagina),a
+        ld    a,1            ; se empieza en la Q
+        ld    (kfil),a
+        ld    (kcol),a
+        call  kpon
+        ld    hl,bufbus      ; el texto siempre acabado en 0
+        ld    a,(buslen)
+        ld    e,a
+        ld    d,0
+        add   hl,de
+        ld    (hl),0
+        call  ppinta
+pk1     call  pkey
+        or    a
+        jr    z,pk1
         cp    32
-        jr    c,bs1
-        cp    128
-        jr    nc,bs1
+        jr    nc,pk_car      ; una tecla escrita
+        cp    1
+        jp    z,pk_arr
+        cp    2
+        jp    z,pk_aba
+        cp    6
+        jp    z,pk_izq
+        cp    7
+        jp    z,pk_der
+        cp    4
+        jp    z,pk_fue
+        cp    5
+        jp    z,pk_del
+        cp    21
+        jp    z,pk_del
+        cp    20
+        jp    z,bs_go
+        cp    22
+        jp    z,bs_sal
+        jr    pk1
+
+pk_car  ld    c,a            ; anadir, hasta 20
+        ld    a,(buslen)
+        cp    20
+        jr    nc,pk1
+        ld    e,a
+        ld    d,0
+        ld    hl,bufbus
+        add   hl,de
+        ld    (hl),c
+        inc   hl
+        ld    (hl),0
+        inc   a
+        ld    (buslen),a
+        call  pinput
+        jr    pk1
+
+pk_arr  call  kguarda        ; mover la tecla elegida
+        call  karr
+        jr    pk_rep
+pk_aba  call  kguarda
+        call  kaba
+        jr    pk_rep
+pk_izq  call  kguarda
+        call  kizq
+        jr    pk_rep
+pk_der  call  kguarda
+        call  kder
+pk_rep  ld    hl,(kant)      ; y repintar las lineas de las dos, de una
+        call  krango         ; vez: suelen ser las mismas
+        push  bc
+        ld    hl,(ksel)
+        call  krango
+        pop   de
+        ld    a,d
+        cp    b
+        jr    nc,pr1
         ld    b,a
-        ld    a,c
-        cp    20             ; tope del campo
-        jr    nc,bs1
+pr1     ld    a,e
+        cp    c
+        jr    c,pr2
+        ld    c,a
+pr2     call  kblineas
+        jp    pk1
+kguarda ld    hl,(ksel)
+        ld    (kant),hl
+        ret
+
+pk_fue  ld    hl,(ksel)      ; FUEGO: pulsar la tecla elegida
+        ld    de,5
+        add   hl,de
+        ld    a,(hl)
+        cp    32
+        jp    nc,pk_car      ; una letra o un signo
+        cp    5
+        ld    a,32
+        jp    z,pk_car       ; SPACE
+        ld    a,(hl)
+        cp    4
+        jp    z,bs_go        ; RETURN
+        cp    3
+        jr    z,pk_del       ; DEL
+        cp    1
+        jp    z,bs_sal       ; ESC
+        cp    2
+        jp    nz,pk1
+        xor   a              ; CLR: todo
+        ld    (buslen),a
+        ld    (bufbus),a
+        call  pinput
+        jp    pk1
+
+pk_del  ld    a,(buslen)     ; borrar la ultima
+        or    a
+        jp    z,pk1
+        dec   a
+        ld    (buslen),a
+        ld    e,a
+        ld    d,0
+        ld    hl,bufbus
+        add   hl,de
+        ld    (hl),0
+        call  pinput
+        jp    pk1
+
+; --- A = accion: letras y signos tal cual (32 o mas); 1 arriba, 2 abajo,
+;     6 izquierda, 7 derecha, 4 FUEGO, 5 SALTAR, 20 ENTER, 21 DEL, 22 ESC ---
+pkey    call  #BD19
+        call  #BB09          ; KM READ CHAR
+        jp    nc,li_joy      ; sin tecla: el joystick
+        cp    240
+        jr    z,pky1
+        cp    241
+        jr    z,pky2
+        cp    242
+        jr    z,pky6
+        cp    243
+        jr    z,pky7
+        cp    13
+        jr    z,pky20
+        cp    127
+        jr    z,pky21
+        cp    27
+        jr    z,pky22
+        cp    252
+        jr    z,pky22
+        cp    32
+        jr    c,pky0
+        cp    128
+        jr    nc,pky0
+        push  af             ; el firmware tambien convierte el fuego del
+        call  #BB24          ; joystick en una letra (Z o X): si hay un
+        or    l              ; fuego pulsado no es del teclado, y el
+        and   #30            ; fuego ya lo lee li_joy
+        pop   bc
         ld    a,b
+        ret   z
+pky0    xor   a
+        ret
+pky1    ld    a,1
+        ret
+pky2    ld    a,2
+        ret
+pky6    ld    a,6
+        ret
+pky7    ld    a,7
+        ret
+pky20   ld    a,20
+        ret
+pky21   ld    a,21
+        ret
+pky22   ld    a,22
+        ret
+
+; --- la ventana entera, fila a fila de la lista ---
+ppinta  ld    c,0
+pp1     push  bc
+        call  tlimpia
+        ld    hl,tabfic
+        ld    (ptab),hl
+        pop   bc
+        push  bc
+        ld    a,c
+        or    a
+        jr    nz,pp2
+        ld    hl,tabsel      ; barra de titulo
+        ld    (ptab),hl
+        ld    a,(modog)
+        or    a
+        ld    a,T_PBUS
+        jr    z,pp1b
+        ld    a,T_PBUSG
+pp1b    call  tponid
+        jr    ppw
+pp2     cp    2
+        jr    nz,pp3
+        call  ptexto
+        jr    ppw
+pp3     cp    12             ; filas 12-13: la ayuda, en cian
+        jr    c,ppw
+        push  af
+        ld    hl,tabdir
+        ld    (ptab),hl
+        pop   af
+        add   a,T_KAY1-12
+        call  tponid
+ppw     pop   bc
+        push  bc
+        ld    a,c
+        cp    3              ; filas 3-10: el teclado, aparte
+        jr    c,ppw1
+        cp    11
+        jr    c,ppw2
+ppw1    add   a,FILA0
+        ld    c,a
+        ld    b,COL0
+        ld    a,LISTW
+        call  pfilat
+ppw2    pop   bc
+        inc   c
+        ld    a,c
+        cp    VISIBLE
+        jr    nz,pp1
+        ld    c,FILA0+3      ; esas filas quedan llenas, para que al
+        ld    b,8            ; cerrar la ventana se borren enteras
+ppk     push  bc
+        ld    a,c
+        ld    (pfrow),a
+        call  poswold
+        ld    (hl),78
+        pop   bc
+        inc   c
+        djnz  ppk
+        ld    b,KBY0
+        ld    c,KBY1
+        jp    kblineas
+
+; --- "Texto: " + lo escrito + '_' ---
+ptexto  ld    a,T_KTXT
+        call  tponid
+        ld    hl,bufbus
+        call  tpon
+        ld    a,95           ; '_'
+        jp    pbuf
+
+; --- solo la linea del texto, tras escribir o borrar ---
+pinput  call  tlimpia
+        ld    hl,tabfic
+        ld    (ptab),hl
+        call  ptexto
+        ld    b,COL0
+        ld    c,FILA0+2
+        ld    a,LISTW
+        jp    pfilat
+
+; ---------------------------------------------------------------
+;  El teclado, como el de CPC Doctor: cada tecla un recuadro cian con
+;  el rotulo en blanco, y la elegida rellena de amarillo con el rotulo
+;  en negro. Se pinta por lineas de barrido: en linebuf se compone una
+;  linea con todas las teclas que la cruzan y se copia a pantalla. La
+;  tabla (TECLAS, KFILAS) la escribe tools/teclado.py.
+; ---------------------------------------------------------------
+
+; --- las lineas de barrido de B a C, las dos incluidas ---
+kblineas
+        push  bc
+        ld    a,b
+        call  kblinea
+        pop   bc
+        ld    a,b
+        cp    c
+        ret   z
+        inc   b
+        jr    kblineas
+
+; --- B, C = primera y ultima linea de la tecla HL ---
+krango  inc   hl
+        inc   hl
+        ld    b,(hl)         ; y
+        inc   hl
+        inc   hl
+        ld    a,(hl)         ; alto
+        add   a,b
+        dec   a
+        ld    c,a
+        ret
+
+; --- la linea de barrido A ---
+kblinea ld    (kly),a
+        ld    hl,linebuf
+        ld    de,linebuf+1
+        ld    bc,79
+        ld    (hl),0
+        ldir
+        ld    a,(kly)        ; solo las teclas de su fila
+        sub   KBYMIN
+        jr    c,kbl2
+        ld    b,-1
+kbl0    inc   b
+        sub   KPASO
+        jr    nc,kbl0
+        ld    a,b
+        cp    5
+        jr    nc,kbl2
+        call  kfila
+        push  de
+        pop   ix
+kbl1    push  bc
+        call  kbtecla
+        ld    de,10
+        add   ix,de
+        pop   bc
+        djnz  kbl1
+kbl2    ld    a,(kly)        ; a pantalla, bytes 1 a 78
+        ld    c,a
+        rrca
+        rrca
+        rrca
+        and   #1F
+        ld    l,a            ; (linea / 8) x 80
+        ld    h,0
+        add   hl,hl
+        add   hl,hl
+        add   hl,hl
+        add   hl,hl
+        ld    d,h
+        ld    e,l
+        add   hl,hl
+        add   hl,hl
+        add   hl,de
+        ld    a,c            ; + (linea mod 8) x #800
+        and   7
+        add   a,a
+        add   a,a
+        add   a,a
+        add   a,#C0
+        add   a,h
+        ld    h,a
+        ld    a,(pagina)
+        xor   h
+        ld    h,a
+        inc   hl
+        ex    de,hl
+        ld    hl,linebuf+1
+        ld    bc,78
+        ldir
+        ret
+
+; --- la tecla IX, si cruza la linea (kly) ---
+kbtecla ld    a,(kly)
+        sub   (ix+2)
+        ret   c
+        cp    (ix+4)
+        ret   nc
+        ld    (kyd),a
+        ld    l,(ix+0)
+        ld    h,(ix+1)
+        ld    (kx0),hl
+        call  kesel
+        jr    z,kt_sel
+        xor   a
+        ld    (kmode),a
+        ld    a,#F0          ; recuadro cian
+        ld    (kpen),a
+        ld    a,(kyd)
+        or    a
+        jr    z,kt_h         ; arriba y abajo, la linea entera
+        inc   a
+        cp    (ix+4)
+        jr    z,kt_h
+        ld    hl,(kx0)       ; en medio, los dos lados
+        call  kpix
+        ld    hl,(kx0)
+        ld    e,(ix+3)
+        ld    d,0
+        add   hl,de
+        dec   hl
+        dec   hl
+        call  kpix
+        jr    kt_rot
+kt_sel  ld    a,1
+        ld    (kmode),a
+        ld    a,#FF          ; la elegida, rellena de amarillo
+        ld    (kpen),a
+kt_h    ld    hl,(kx0)
+        ld    a,(ix+3)
+        dec   a
+        call  kspan
+kt_rot  ld    a,(ix+4)       ; el rotulo, centrado
+        sub   10
+        srl   a
+        ld    b,a
+        ld    a,(kyd)
+        sub   b
+        ret   c
+        cp    10
+        ret   nc
+        ld    (krl),a
+        ld    e,(ix+9)       ; donde empieza
+        ld    d,0
+        ld    hl,(kx0)
+        add   hl,de
+        ld    a,(ix+5)
+        cp    32
+        jp    nc,kglifo      ; las letras, de la accion
+        ld    e,(ix+6)
+        ld    d,(ix+7)
+kt_r5   ld    a,(de)
+        or    a
+        ret   z
+        inc   de
+        push  de
+        push  hl
+        call  kglifo
+        pop   hl
+        ld    de,5
+        add   hl,de
+        pop   de
+        jr    kt_r5
+
+; --- Z si la tecla IX es la elegida (o la otra mitad de RETURN) ---
+kesel   ld    hl,(ksel)
+        ld    a,(hl)
+        cp    (ix+0)
+        ret   nz
+        inc   hl
+        ld    a,(hl)
+        cp    (ix+1)
+        ret   nz
+        inc   hl
+        ld    a,(hl)
+        cp    (ix+2)
+        ret
+
+; --- el pixel HL en cian ---
+kpix    ld    a,l
+        and   3
+        ld    e,a
+        srl   h
+        rr    l
+        srl   h
+        rr    l
+        ld    bc,linebuf
+        add   hl,bc
+        ld    a,#88
+        inc   e
+kp1     dec   e
+        jr    z,kp2
+        rrca
+        jr    kp1
+kp2     and   #F0
+        or    (hl)
+        ld    (hl),a
+        ret
+
+; --- A pixeles del color (kpen) desde el pixel HL ---
+kspan   ld    c,a
+        ld    a,l
+        and   3
+        ld    b,#88
+        jr    z,ks1
+ks0     rrc   b
+        dec   a
+        jr    nz,ks0
+ks1     srl   h
+        rr    l
+        srl   h
+        rr    l
+        ld    de,linebuf
+        add   hl,de
+        ld    a,(kpen)
+        ld    d,a
+ks2     ld    a,b            ; bytes enteros de una vez
+        cp    #88
+        jr    nz,ks4
+        ld    a,c
+        cp    4
+        jr    c,ks4
+        ld    a,d
+        or    (hl)
         ld    (hl),a
         inc   hl
-        inc   c
-        call  putc
-        jr    bs1
-
-bs_del  ld    a,c
-        or    a
-        jr    z,bs1
-        dec   hl
-        dec   c
-        call  retro
-        ld    a,32
-        call  putc
-        call  retro
-        jr    bs1
-
-bs_fin  ld    (hl),0
         ld    a,c
+        sub   4
+        ld    c,a
+        ret   z
+        jr    ks2
+ks4     ld    a,b
+        and   d
+        or    (hl)
+        ld    (hl),a
+        rrc   b
+        jr    nc,ks3
+        inc   hl
+ks3     dec   c
+        jr    nz,ks2
+        ret
+
+; --- la linea (krl) del caracter A en el pixel HL: en blanco, o en
+;     negro sobre el amarillo si es la elegida ---
+kglifo  sub   32
+        ld    c,a
+        ld    a,l
+        and   3
+        ld    (gs),a
+        srl   h
+        rr    l
+        srl   h
+        rr    l
+        ld    de,linebuf
+        add   hl,de
+        push  hl
+        ld    a,c
+        call  gdatos
+        pop   de
+        ret   z              ; sin tinta
+        ld    a,(gf)
+        ld    b,a
+        ld    a,(krl)
+        sub   b
+        ret   c              ; por encima de la tinta
+        ld    c,a
+        ld    a,(gk)
+        cp    c
+        ret   z
+        ret   c              ; por debajo
+        push  de             ; los datos: + desplazamiento x 2 x lineas
+        add   a,a            ; + 2 x linea
+        ld    e,a
+        ld    d,0
+        ld    a,(gs)
+        or    a
+        jr    z,kg2
+        ld    b,a
+kg1     add   hl,de
+        djnz  kg1
+kg2     ld    a,c
+        add   a,a
+        ld    e,a
+        add   hl,de
+        pop   de
+        ld    a,(kmode)
+        or    a
+        jr    nz,kg_neg
+        call  kg_or
+        inc   de
+        inc   hl
+kg_or   ld    a,(hl)
+        and   #0F
+        ex    de,hl
+        or    (hl)
+        ld    (hl),a
+        ex    de,hl
+        ret
+kg_neg  call  kg_and
+        inc   de
+        inc   hl
+kg_and  ld    a,(hl)
+        cpl
+        ex    de,hl
+        and   (hl)
+        ld    (hl),a
+        ex    de,hl
+        ret
+
+; --- DE = primera tecla de la fila A, B = cuantas tiene ---
+kfila   ld    l,a
+        ld    h,0
+        ld    e,l
+        ld    d,h
+        add   hl,hl
+        add   hl,de
+        ld    de,KFILAS
+        add   hl,de
+        ld    e,(hl)
+        inc   hl
+        ld    d,(hl)
+        inc   hl
+        ld    b,(hl)
+        ret
+
+; --- (ksel) = la tecla (kcol) de la fila (kfil) ---
+kpon    ld    a,(kfil)
+        call  kfila
+        ld    a,(kcol)
+        ld    l,a
+        ld    h,0
+        add   hl,hl
+        ld    c,l
+        ld    b,h
+        add   hl,hl
+        add   hl,hl
+        add   hl,bc
+        add   hl,de
+        ld    (ksel),hl
+        ret
+
+; --- Z si la tecla elegida no escribe nada (TAB, CAPS, SHIFT, CTRL) ---
+kmuda   ld    hl,(ksel)
+        ld    de,5
+        add   hl,de
+        ld    a,(hl)
+        or    a
+        ret
+
+; --- izquierda y derecha en la fila, dando la vuelta ---
+kizq    ld    a,(kfil)
+        call  kfila
+        ld    a,(kcol)
+        or    a
+        jr    nz,kz1
+        ld    a,b
+kz1     dec   a
+        ld    (kcol),a
+        call  kpon
+        call  kmuda
+        jr    z,kizq
+        ret
+kder    ld    a,(kfil)
+        call  kfila
+        ld    a,(kcol)
+        inc   a
+        cp    b
+        jr    c,kd1
+        xor   a
+kd1     ld    (kcol),a
+        call  kpon
+        call  kmuda
+        jr    z,kder
+        ret
+
+; --- arriba y abajo: la tecla de la otra fila mas cerca en x. Si es
+;     la misma (RETURN ocupa dos filas), una fila mas ---
+karr    ld    a,(kfil)
+        or    a
+        ret   z
+        dec   a
+        call  kvert
+        ret   nz
+        jr    karr
+kaba    ld    a,(kfil)
+        cp    4
+        ret   z
+        inc   a
+        call  kvert
+        ret   nz
+        jr    kaba
+
+kvert   push  af
+        ld    hl,(ksel)
+        ld    (kold),hl
+        call  kcentro
+        ld    (kcx),hl
+        pop   af
+        ld    (kfil),a
+        call  kfila
+        ld    hl,#FFFF
+        ld    (kdist),hl
+        ld    c,0
+kv1     push  bc
+        push  de
+        ld    hl,5
+        add   hl,de
+        ld    a,(hl)
+        or    a
+        jr    z,kv3          ; no escribe: no se elige
+        ex    de,hl
+        call  kcentro+3
+        ld    de,(kcx)
+        or    a
+        sbc   hl,de
+        jr    nc,kv2
+        ex    de,hl          ; distancia en valor absoluto
+        ld    hl,0
+        or    a
+        sbc   hl,de
+kv2     ld    de,(kdist)
+        or    a
+        sbc   hl,de
+        jr    nc,kv3
+        add   hl,de
+        ld    (kdist),hl
+        pop   de
+        pop   bc
+        push  bc
+        push  de
+        ld    a,c
+        ld    (kcol),a
+kv3     pop   de
+        ld    hl,10
+        add   hl,de
+        ex    de,hl
+        pop   bc
+        inc   c
+        djnz  kv1
+        call  kpon
+        ld    ix,(kold)
+        jp    kesel
+
+; --- HL = centro en x de la tecla (ksel); en kcentro+3, de la tecla HL ---
+kcentro ld    hl,(ksel)
+        ld    e,(hl)
+        inc   hl
+        ld    d,(hl)
+        inc   hl
+        inc   hl
+        ld    a,(hl)
+        srl   a
+        ld    l,a
+        ld    h,0
+        add   hl,de
+        ret
+
+bs_go   ld    a,(buslen)     ; buscar lo escrito
         or    a
         jr    z,bs_sal
-        ld    b,0
-bs_f1   ld    a,(nent)
-        cp    b
-        jr    z,bs_sal       ; sin coincidencias: no mover nada
-        ld    a,b
-        push  bc
+        ld    a,(modog)
+        or    a
+        jp    nz,global
+        ld    a,(nent)       ; en la carpeta: la siguiente que contenga
+        or    a              ; el texto, dando la vuelta
+        jr    z,bs_sal
+        ld    b,a
+        ld    a,(cursor)
+        ld    c,a
+bl1     inc   c
+        ld    a,(nent)
+        cp    c
+        jr    nz,bl2
+        ld    c,0
+bl2     push  bc
+        ld    a,c
         call  entrada
         ld    a,(hl)
         cp    62
-        jr    nz,bs_f2
-        inc   hl             ; saltar el marcador de carpeta
-bs_f2   ld    de,bufbus
-        call  prefijo
+        jr    nz,bl3
+        inc   hl
+bl3     ld    de,bufbus
+        call  contiene
         pop   bc
-        jr    c,bs_hit
-        inc   b
-        jr    bs_f1
-bs_hit  ld    a,b
+        jr    c,bl_hit
+        djnz  bl1
+        jr    bs_sal         ; ninguna
+bl_hit  ld    a,c
         ld    (cursor),a
         ld    (top),a
 bs_sal  call  ruta
         jp    repag
 
-; --- retrocede una columna ---
-retro   ld    a,(ccol)       ; solo A: el buscador tiene HL ocupado
-        dec   a
-        ld    (ccol),a
+; --- carry si la cadena HL contiene DE, sin distinguir mayusculas ---
+contiene
+cn1     push  hl
+        push  de
+        call  prefijo
+        pop   de
+        pop   hl
+        ret   c
+        ld    a,(hl)
+        or    a
+        ret   z
+        inc   hl
+        jr    cn1
+
+; ---------------------------------------------------------------
+;  Busqueda en toda la biblioteca: se recorren todas las carpetas
+;  desde la de partida (/ROMS) y los resultados se muestran como una
+;  carpeta mas, con la ruta delante: "A/Aliens (UK) (1986).dsk".
+;
+;  El M4 lee una carpeta entrada a entrada, y bajar a una subcarpeta
+;  a mitad de lectura haria perder la posicion. Asi que las carpetas
+;  que se encuentran se apilan y se visitan despues. Los resultados
+;  crecen desde el principio del bufer de entradas y la pila desde el
+;  final; si se tocan, se para y la ruta lo indica con un '+'.
+; ---------------------------------------------------------------
+global  ld    hl,pathsav     ; basepath: la carpeta de partida con '/'
+        ld    de,basepath
+        ld    a,(baselen)
+        or    a
+        jr    z,gl1
+        ld    c,a
+        ld    b,0
+        ldir
+gl1     dec   de
+        ld    a,(de)
+        inc   de
+        cp    47
+        jr    z,gl2
+        ld    a,47
+        ld    (de),a
+        inc   de
+gl2     xor   a
+        ld    (de),a
+        ld    hl,basepath
+        call  strlen
+        ld    (bpl),a
+        ld    hl,ENTBUF      ; resultados vacios
+        ld    (destino),hl
+        ld    hl,ENTPTR
+        ld    (idx),hl
+        xor   a
+        ld    (nent),a
+        ld    (lleno),a
+        ld    (gcar),a
+        ld    h,a
+        ld    l,a
+        ld    (gfic),hl
+        ld    hl,PILATOP-1   ; en la pila, la carpeta de partida: ""
+        ld    (hl),0
+        ld    (pila),hl
+gw1     ld    a,(lleno)
+        or    a
+        jr    nz,gw_fin
+        ld    hl,(pila)      ; pila vacia: se acabo
+        ld    de,PILATOP
+        or    a
+        sbc   hl,de
+        jr    nc,gw_fin
+        ld    hl,basepath    ; walkpath = basepath + la cima
+        ld    de,walkpath
+        call  copia0
+        ld    hl,(pila)
+        call  copia0
+        ld    (pila),hl
+        call  cdwalk
+        ld    a,(resp+3)
+        cp    #FF
+        jr    z,gw1
+        ld    hl,gcar
+        inc   (hl)
+        call  progreso
+        ld    hl,cmdargs
+        call  m4cmd
+gw2     ld    a,(lleno)
+        or    a
+        jr    nz,gw_fin
+        ld    hl,cmdrd
+        call  m4cmd
+        cp    3
+        jr    c,gw1          ; fin de esta carpeta
+        ld    hl,(gfic)
+        inc   hl
+        ld    (gfic),hl
+        ld    hl,resp+3
+        call  enmasc
+        ld    a,(resp+3)
+        cp    62
+        jr    nz,gw3
+        ld    a,(resp+4)     ; ni "." ni ".."
+        cp    46
+        call  nz,apila
+gw3     ld    hl,resp+3
+        ld    a,(hl)
+        cp    62
+        jr    nz,gw4
+        inc   hl
+gw4     ld    de,bufbus
+        call  contiene
+        call  c,anade
+        jr    gw2
+gw_fin  ld    a,(nent)
+        or    a
+        jp    nz,gw_hay
+        ld    hl,pathsav     ; nada: de vuelta a donde se estaba
+        call  cd_a
+        call  leedir
+        ld    hl,txtbuf      ; con lo recorrido: si no se encuentra
+        ld    (txtp),hl      ; nada, que se vea si se miro
+        ld    a,T_NADA
+        call  tponid
+        ld    a,58
+        call  pbuf
+        ld    a,32
+        call  pbuf
+        ld    a,(gcar)
+        call  prtnum
+        ld    a,T_NCAR
+        call  tponid
+        ld    hl,(gfic)
+        call  prtn16
+        ld    a,T_NFIC
+        call  tponid
+        xor   a
+        call  pbuf
+        ld    hl,txtbuf
+        call  aviso
+        jp    repag
+gw_hay  call  ordena
+        ld    a,1
+        ld    (enres),a
+        xor   a
+        ld    (cursor),a
+        ld    (top),a
+        call  ruta
+        jp    repag
+
+; --- la carpeta que se recorre, en la linea de la ruta ---
+progreso
+        call  tlimpia
+        ld    hl,txtbuf
+        ld    (txtp),hl
+        ld    a,T_BUSC
+        call  tponid
+        call  relptr
+        call  tpon
+        ld    hl,tabama
+        ld    (ptab),hl
+        ld    b,2
+        ld    c,3
+        ld    a,50
+        jp    pfila
+
+; --- HL = la parte relativa de walkpath, tras basepath ---
+relptr  ld    a,(bpl)
+        ld    hl,walkpath
+        add   a,l
+        ld    l,a
+        ret   nc
+        inc   h
         ret
+
+; --- apila la subcarpeta de resp+3 (">nombre"): rel + nombre + '/' ---
+apila   call  relptr
+        call  strlen
+        ld    c,a
+        ld    hl,resp+4
+        call  strlen
+        add   a,c
+        add   a,2
+        ld    c,a
+        ld    b,0
+        ld    hl,(pila)
+        or    a
+        sbc   hl,bc          ; la nueva cima
+        push  hl
+        ld    de,(destino)   ; que no pise los resultados
+        ld    bc,16
+        ex    de,hl
+        add   hl,bc
+        ex    de,hl
+        or    a
+        sbc   hl,de
+        pop   hl
+        jr    c,ap_ll
+        ld    (pila),hl
+        ex    de,hl
+        call  relptr
+        call  copia0
+        ld    hl,resp+4
+        call  copia0
+        ld    a,47
+        ld    (de),a
+        inc   de
+        xor   a
+        ld    (de),a
+        ret
+ap_ll   ld    a,1
+        ld    (lleno),a
+        ret
+
+; --- anade resp+3 a los resultados: ['>'] + rel + nombre ---
+anade   ld    a,(nent)
+        cp    MAXENT
+        jr    nc,an_ll
+        call  relptr
+        call  strlen
+        ld    c,a
+        ld    hl,resp+3
+        call  strlen
+        add   a,c
+        inc   a
+        ld    c,a
+        ld    b,0
+        ld    hl,(destino)   ; que no pise la pila
+        add   hl,bc
+        ld    de,(pila)
+        or    a
+        sbc   hl,de
+        jr    nc,an_ll
+        ld    hl,(destino)
+        ld    de,(idx)
+        ld    a,l
+        ld    (de),a
+        inc   de
+        ld    a,h
+        ld    (de),a
+        inc   de
+        ld    (idx),de
+        ld    de,(destino)
+        ld    a,(resp+3)
+        cp    62
+        jr    nz,an1
+        ld    (de),a
+        inc   de
+an1     call  relptr
+        call  copia0
+        ld    hl,resp+3
+        ld    a,(hl)
+        cp    62
+        jr    nz,an2
+        inc   hl
+an2     call  copia0
+        inc   de
+        ld    (destino),de
+        ld    hl,nent
+        inc   (hl)
+        ret
+an_ll   ld    a,1
+        ld    (lleno),a
+        ret
+
+; --- cd a walkpath, sin la '/' final (salvo si es la raiz) ---
+cdwalk  ld    hl,walkpath
+        call  strlen
+        cp    2
+        jr    c,cw1
+        ld    e,a
+        ld    d,0
+        add   hl,de
+        dec   hl
+        ld    a,(hl)
+        cp    47
+        jr    nz,cw1
+        ld    (hl),0
+        push  hl
+        ld    hl,walkpath
+        call  cd_a
+        pop   hl
+        ld    (hl),47
+        ret
+cw1     ld    hl,walkpath
+        jp    cd_a
+
+; --- un resultado HL (['>'] rel/nombre): cd a su carpeta. Devuelve HL
+;     en el nombre final, con un '>' delante si es carpeta, como lo
+;     espera 'entrar' ---
+resuelve
+        ld    a,(hl)
+        cp    62
+        push  af
+        jr    nz,rs1
+        inc   hl
+rs1     push  hl
+        ld    de,0
+        ld    (ultbar),de
+rs2     ld    a,(hl)
+        or    a
+        jr    z,rs3
+        cp    47
+        jr    nz,rs2b
+        ld    (ultbar),hl
+rs2b    inc   hl
+        jr    rs2
+rs3     ld    hl,basepath
+        ld    de,walkpath
+        call  copia0
+        ld    (wkend),de
+        ld    hl,(ultbar)
+        ld    a,h
+        or    l
+        jr    z,rs5          ; esta en la carpeta de partida
+        pop   de
+        push  de
+        or    a
+        sbc   hl,de
+        inc   hl
+        ld    b,h
+        ld    c,l
+        pop   hl
+        push  hl
+        ld    de,(wkend)
+        ldir
+        xor   a
+        ld    (de),a
+rs5     call  cdwalk
+        ld    hl,(ultbar)
+        ld    a,h
+        or    l
+        jr    z,rs6
+        inc   hl
+        jr    rs7
+rs6     pop   hl
+        push  hl
+rs7     pop   de
+        pop   af
+        ret   nz
+        dec   hl             ; carpeta: '>' justo delante del nombre
+        ld    (hl),62
+        ret
+
+; --- la ruta actual en pathsav ---
+guardaruta
+        ld    hl,cmdpath
+        call  m4cmd
+        ld    hl,resp+3
+        ld    de,pathsav
+        jp    copia0
+
+; --- copia HL en DE con el 0; DE queda en el 0 y HL tras el ---
+copia0  ld    a,(hl)
+        ld    (de),a
+        inc   hl
+        or    a
+        ret   z
+        inc   de
+        jr    copia0
+
+; --- A = largo de la cadena HL (HL se conserva) ---
+strlen  push  hl
+        ld    b,0
+sz1     ld    a,(hl)
+        or    a
+        jr    z,sz2
+        inc   hl
+        inc   b
+        jr    sz1
+sz2     ld    a,b
+        pop   hl
+        ret
+
+; --- quita los atributos AMSDOS (bit 7) de la cadena HL ---
+enmasc  ld    a,(hl)
+        and   #7F
+        ld    (hl),a
+        ret   z
+        inc   hl
+        jr    enmasc
+
 
 ; --- carry si (HL) empieza por (DE), sin distinguir mayusculas ---
 prefijo ld    a,(de)
@@ -1195,6 +2396,9 @@ mayus   cp    97
 lanza   push  hl
         call  restaura
         ld    hl,(descr)
+        ld    a,h
+        or    l
+        jp    z,directo
         ld    a,(hl)         ; longitud que reservo BASIC
         ld    (cmdlen),a
         inc   hl
@@ -1231,6 +2435,460 @@ lz3     ld    hl,(descr)
         ret
 
 ; --- deja la pantalla como la espera BASIC ---; --- deja la pantalla como la espera BASIC ---
+; ---------------------------------------------------------------
+;  Modo directo: el explorador carga y arranca el fichero el mismo,
+;  sin que BASIC tenga que hacer el RUN. Es lo que hace la ROM del M4
+;  con el AUTOEXEC.BAS y con el "ejecutar" de su web:
+;
+;   - BASIC tokenizado: se carga en su sitio (#0170), se ajustan los
+;     punteros de fin de programa de BASIC y se llama a su rutina de
+;     ejecutar el programa en memoria, en la ROM 0.
+;   - Binario: se carga en su direccion y se salta a su arranque con
+;     la ROM superior apagada.
+;   - BASIC en ASCII, sin cabecera: asi no se puede; se deja escrito
+;     el RUN que hay que teclear.
+;
+;  El directorio del M4 ya es el del fichero (el del disco si estaba
+;  dentro de un .dsk), asi que basta con el nombre.
+; ---------------------------------------------------------------
+directo pop   hl             ; nombre elegido
+        ld    de,cdname      ; sin el relleno ni el punto final
+        ld    b,0
+dr1     ld    a,(hl)
+        or    a
+        jr    z,dr2
+        inc   hl
+        cp    32
+        jr    z,dr1
+        ld    (de),a
+        inc   de
+        inc   b
+        jr    dr1
+dr2     ld    a,b
+        or    a
+        ret   z
+        dec   de
+        ld    a,(de)
+        cp    46
+        jr    nz,dr3
+        dec   b
+dr3     ld    a,b
+        ld    (cmdlen),a
+        ld    hl,cdname
+        ld    de,ENTBUF      ; 2 KB de trabajo para el firmware
+        call  #BC77          ; CAS IN OPEN: A tipo, DE carga, BC largo
+        ret   nc             ; no se abre: el firmware ya lo ha dicho
+        push  bc
+        push  de
+        and   #0E
+        jr    z,dr_bas
+        cp    2
+        jr    z,dr_bin
+        pop   de             ; ASCII u otra cosa
+        pop   bc
+        call  #BC7A          ; CAS IN CLOSE
+        ld    a,T_RUN        ; RUN"nombre" para teclearlo
+        call  texto
+        call  prtfw
+        ld    hl,cdname
+        ld    a,(cmdlen)
+        ld    b,a
+dr4     ld    a,(hl)
+        call  #BB5A
+        inc   hl
+        djnz  dr4
+        ld    a,34
+        call  #BB5A
+        ld    a,13
+        call  #BB5A
+        ld    a,10
+        jp    #BB5A
+
+dr_bin  pop   hl             ; direccion de carga
+        pop   bc
+        call  #BC83          ; CAS IN DIRECT: HL = arranque
+        push  hl
+        call  #BC7A          ; CAS IN CLOSE
+        ;  KL U ROM DISABLE apaga la ROM superior y vuelve con RET: si
+        ;  lo que hay en la pila es el arranque del juego, vuelve al
+        ;  juego. Desde la ROM no se puede saltar de otra forma, porque
+        ;  al apagarla desaparece el codigo que hace el salto.
+        jp    #B903
+
+dr_bas  pop   hl             ; direccion de carga, #0170
+        call  #BC83          ; CAS IN DIRECT
+        call  #BC7A          ; CAS IN CLOSE
+        pop   bc             ; largo del programa
+        ld    hl,#0170
+        add   hl,bc          ; donde acaba
+        ;  La rutina de RUN lee sus argumentos del texto al que apunta
+        ;  HL, que es este fin de programa. Tras un arranque en frio ahi
+        ;  hay ceros; tras usar BASIC, restos que RUN intenta entender
+        ;  ("Syntax error"). Un fin de linea explicito lo deja claro.
+        ld    (hl),0
+        inc   hl
+        ld    (hl),0
+        dec   hl
+        push  hl
+        ld    c,0            ; version de BASIC: la de la ROM 0
+        call  #B915          ; KL PROBE ROM: H = version
+        ld    a,h
+        pop   hl
+        or    a
+        jr    z,dr10
+        ld    (#AE66),hl     ; BASIC 1.1 (664 y 6128)
+        ld    (#AE68),hl
+        ld    (#AE6A),hl
+        ld    (#AE6C),hl
+        cp    1
+        jr    z,dr664
+        rst   #18            ; FAR CALL: a ejecutar el programa
+        dw    far6128
+        ret
+dr664   rst   #18
+        dw    far664
+        ret
+dr10    ld    (#AE83),hl     ; BASIC 1.0 (464)
+        ld    (#AE85),hl
+        ld    (#AE87),hl
+        ld    (#AE89),hl
+        rst   #18
+        dw    far464
+        ret
+
+;  Rutina de BASIC que ejecuta el programa en memoria, en la ROM 0.
+;  Las mismas direcciones que usa la ROM del M4.
+far464  dw    #E9BD
+        db    0
+far664  dw    #EA7D
+        db    0
+far6128 dw    #EA78
+        db    0
+
+; --- cadena HL por el firmware, hasta el 0 ---
+prtfw   ld    a,(hl)
+        or    a
+        ret   z
+        call  #BB5A
+        inc   hl
+        jr    prtfw
+
+
+; ---------------------------------------------------------------
+;  Configuracion: por ahora, el idioma. Se pinta en la zona de la
+;  lista; izquierda y derecha cambian el valor y se ve al momento;
+;  fuego lo guarda en /EXPLOR.CFG y vuelve, saltar o ESC vuelven
+;  dejandolo como estaba.
+; ---------------------------------------------------------------
+config  ld    a,(idioma)
+        ld    (idiold),a
+        ld    a,(pagvis)     ; se pinta sobre la pagina que se ve
+        ld    (pagina),a
+cf_pin  call  pintacfg
+cf1     call  lee_entrada
+        or    a
+        jr    z,cf1
+        cp    6              ; izquierda
+        jr    z,cf_cam
+        cp    7              ; derecha
+        jr    z,cf_cam
+        cp    4              ; fuego
+        jr    z,cf_ok
+        cp    5              ; saltar
+        jr    z,cf_no
+        cp    3              ; ESC
+        jr    z,cf_no
+        jr    cf1
+cf_cam  ld    a,(idioma)
+        xor   1
+        ld    (idioma),a
+        jr    cf_pin
+cf_no   ld    a,(idiold)
+        ld    (idioma),a
+        jr    cf_fin
+cf_ok   call  grabcfg
+cf_fin  call  marcos         ; titulo y ayuda en el idioma que quede
+        jp    repag
+
+; --- la pantalla de configuracion, fila a fila de la lista ---
+pintacfg
+        ld    c,0
+pg1     push  bc
+        call  tlimpia
+        ld    hl,tabfic
+        ld    (ptab),hl
+        pop   bc
+        push  bc
+        ld    a,c
+        cp    1
+        jr    nz,pg2
+        ld    hl,tabama
+        ld    (ptab),hl
+        ld    a,T_CFG
+        call  tponid
+        jr    pgw
+pg2     cp    3
+        jr    nz,pg3
+        ld    a,T_IDI
+        call  tponid
+        ld    a,16
+        call  tcol
+        ld    hl,txmenor
+        call  tpon
+        ld    a,T_VAL
+        call  tponid
+        ld    hl,txmayor
+        call  tpon
+        jr    pgw
+pg3     cp    5              ; filas 5 a 8: las instrucciones
+        jr    c,pgw
+        cp    9
+        jr    nc,pg4
+        add   a,T_CI1-5
+        call  tponid
+        jr    pgw
+pg4     cp    10             ; filas 10 y 11: la nota, en cian
+        jr    c,pgw
+        cp    12
+        jr    nc,pgw
+        push  af
+        ld    hl,tabdir
+        ld    (ptab),hl
+        pop   af
+        add   a,T_NO1-10
+        call  tponid
+pgw     pop   bc
+        push  bc
+        ld    a,c
+        add   a,FILA0
+        ld    c,a
+        ld    b,COL0
+        ld    a,LISTW
+        call  pfilat
+        pop   bc
+        inc   c
+        ld    a,c
+        cp    VISIBLE
+        jr    nz,pg1
+        ret
+
+; --- txtbuf en blanco; se escribe a partir de la columna 2 del tramo ---
+tlimpia ld    hl,txtbuf
+        ld    b,64
+tl1     ld    (hl),32
+        inc   hl
+        djnz  tl1
+        ld    hl,txtbuf+2
+        ld    (txtp),hl
+        ret
+
+; --- se sigue escribiendo en la posicion A del tramo ---
+tcol    ld    hl,txtbuf
+        ld    e,a
+        ld    d,0
+        add   hl,de
+        ld    (txtp),hl
+        ret
+
+; --- el texto A, en el idioma elegido, a txtbuf ---
+tponid  call  texto
+; --- la cadena HL a txtbuf ---
+tpon    ld    a,(hl)
+        or    a
+        ret   z
+        call  pbuf
+        inc   hl
+        jr    tpon
+
+; --- HL = el texto A en el idioma elegido ---
+texto   add   a,a
+        ld    e,a
+        ld    d,0
+        ld    hl,txes
+        ld    a,(idioma)
+        or    a
+        jr    z,tx1
+        ld    hl,txen
+tx1     add   hl,de
+        ld    a,(hl)
+        inc   hl
+        ld    h,(hl)
+        ld    l,a
+        ret
+
+; --- lee /EXPLOR.CFG: "EN" es ingles; sin fichero, castellano ---
+leecfg  xor   a
+        ld    (idioma),a
+        ld    hl,nomcfg
+        ld    a,#81          ; FA_READ + ruta
+        call  fabre
+        ret   c
+        ld    hl,fbuf+4      ; C_READ de 2 bytes
+        ld    (hl),2
+        inc   hl
+        ld    (hl),0
+        ld    a,#02
+        ld    b,5
+        call  fpaq
+        ld    a,(resp+3)
+        or    a
+        jr    nz,lc9
+        ld    a,(resp+4)
+        and   #DF
+        cp    69             ; 'E'
+        jr    nz,lc9
+        ld    a,(resp+5)
+        and   #DF
+        cp    78             ; 'N'
+        jr    nz,lc9
+        ld    a,1
+        ld    (idioma),a
+lc9     ld    a,#04          ; C_CLOSE
+        ld    b,3
+        jp    fpaq
+
+; --- guarda el idioma en /EXPLOR.CFG ("ES" o "EN") ---
+grabcfg ld    hl,nomcfg
+        ld    a,#8A          ; FA_WRITE + FA_CREATE_ALWAYS + ruta
+        call  fabre
+        ret   c
+        ld    hl,fbuf+4
+        ld    (hl),69        ; 'E'
+        inc   hl
+        ld    a,(idioma)
+        or    a
+        ld    a,83           ; 'S'
+        jr    z,gc1
+        ld    a,78           ; 'N'
+gc1     ld    (hl),a
+        inc   hl
+        ld    (hl),13
+        inc   hl
+        ld    (hl),10
+        ld    a,#03          ; C_WRITE: descriptor y 4 bytes
+        ld    b,7
+        call  fpaq
+        ld    a,#04          ; C_CLOSE
+        ld    b,3
+        jp    fpaq
+
+; --- C_OPEN del nombre HL con el modo A. Carry si falla; si no, el
+;     descriptor queda en (fdes) ---
+fabre   ld    (cdbuf+3),a
+        ld    de,cdbuf+4
+        ld    b,0
+fa1     ld    a,(hl)
+        ld    (de),a
+        inc   hl
+        inc   de
+        inc   b
+        or    a
+        jr    nz,fa1
+        ld    a,b
+        add   a,3
+        ld    (cdbuf),a
+        ld    a,#01
+        ld    (cdbuf+1),a
+        ld    a,#43
+        ld    (cdbuf+2),a
+        ld    hl,cdbuf
+        call  m4cmd
+        ld    a,(resp+3)
+        ld    (fdes),a
+        ld    a,(resp+4)     ; 0 = abierto
+        or    a
+        ret   z
+        scf
+        ret
+
+nomcfg  db    "/EXPLOR.CFG",0
+txmenor db    "< ",0
+txmayor db    " >",0
+
+; --- los textos: cada tabla, en el orden de los T_ ---
+txes    dw    es_tit
+        dw    es_h1,es_h2,es_h3,es_h4,es_h5,es_h6,es_h7,es_h8
+        dw    es_bus,es_cart,es_ileg,es_run
+        dw    es_cfg,es_idi,es_val,es_ci1,es_ci2,es_ci3,es_ci4
+        dw    es_no1,es_no2
+        dw    es_res,es_busg,es_nada,es_busc
+        dw    es_pbus,es_pbusg,es_ktxt,es_kay1,es_kay2,es_ncar,es_nfic
+txen    dw    en_tit
+        dw    en_h1,en_h2,en_h3,en_h4,en_h5,en_h6,en_h7,en_h8
+        dw    en_bus,en_cart,en_ileg,en_run
+        dw    en_cfg,en_idi,en_val,en_ci1,en_ci2,en_ci3,en_ci4
+        dw    en_no1,en_no2
+        dw    en_res,en_busg,en_nada,en_busc
+        dw    en_pbus,en_pbusg,en_ktxt,en_kay1,en_kay2,en_ncar,en_nfic
+
+es_tit  db    "EXPLORADOR",0
+es_h1   db    "ARR/ABA ELEGIR",0
+es_h2   db    "FUEGO ABRIR",0
+es_h3   db    "F/G BUSCAR",0
+es_h4   db    "C CONFIG",0
+es_h5   db    "IZQ/DER PAGINA",0
+es_h6   db    "SALTAR ATRAS",0
+es_h7   db    "L LISTAR",0
+es_h8   db    "ESC SALIR",0
+es_bus  db    "Buscar: ",0
+es_cart db    "Cartucho: solo CPC Plus",0
+es_ileg db    "No se puede abrir",0
+es_run  db    "Cargador en ASCII: teclea RUN",34,0
+es_cfg  db    "CONFIGURACION",0
+es_idi  db    "Idioma",0
+es_val  db    "Castellano",0
+es_ci1  db    "IZQ/DER: cambiar el idioma",0
+es_ci2  db    "FUEGO: guardar y volver",0
+es_ci3  db    "SALTAR o ESC: volver sin guardar",0
+es_ci4  db    "Se guarda en /EXPLOR.CFG",0
+es_no1  db    "L o fuego largo sobre un juego muestra sus ficheros",0
+es_no2  db    "sin lanzarlo, para elegir el cargador a mano.",0
+es_res  db    "Resultados: ",0
+es_busg db    "Buscar en todo: ",0
+es_nada db    "Sin resultados",0
+es_busc db    "Buscando: ",0
+es_pbus db    "BUSCAR EN ESTA CARPETA",0
+es_pbusg db   "BUSCAR EN TODA LA BIBLIOTECA",0
+es_ktxt db    "Texto: ",0
+es_kay1 db    "Joystick: elige tecla y pulsa FUEGO. SALTAR borra.",0
+es_ncar db    " carpetas, ",0
+es_nfic db    " ficheros",0
+es_kay2 db    "Teclado: escribe, ENTER busca, ESC sale.",0
+
+en_tit  db    "EXPLORER",0
+en_h1   db    "UP/DOWN SELECT",0
+en_h2   db    "FIRE OPEN",0
+en_h3   db    "F/G FIND",0
+en_h4   db    "C SETUP",0
+en_h5   db    "LT/RT PAGE",0
+en_h6   db    "FIRE2 BACK",0
+en_h7   db    "L LIST",0
+en_h8   db    "ESC EXIT",0
+en_bus  db    "Find: ",0
+en_cart db    "Cartridge: CPC Plus only",0
+en_ileg db    "Cannot open",0
+en_run  db    "ASCII loader: type RUN",34,0
+en_cfg  db    "SETTINGS",0
+en_idi  db    "Language",0
+en_val  db    "English",0
+en_ci1  db    "LEFT/RIGHT: change language",0
+en_ci2  db    "FIRE: save and go back",0
+en_ci3  db    "FIRE2 or ESC: go back without saving",0
+en_ci4  db    "Saved in /EXPLOR.CFG",0
+en_no1  db    "L or a long press of fire on a game shows its files",0
+en_no2  db    "without launching it, to pick the loader yourself.",0
+en_res  db    "Results: ",0
+en_busg db    "Find in all: ",0
+en_nada db    "No matches",0
+en_busc db    "Searching: ",0
+en_pbus db    "FIND IN THIS FOLDER",0
+en_pbusg db   "FIND IN THE WHOLE LIBRARY",0
+en_ktxt db    "Text: ",0
+en_kay1 db    "Joystick: pick a key and press FIRE. FIRE2 deletes.",0
+en_ncar db    " folders, ",0
+en_nfic db    " files",0
+en_kay2 db    "Keyboard: type, ENTER finds, ESC exits.",0
+
 restaura
         ld    b,#BC          ; CRTC R12 -> mostrar #C000
         ld    c,12
@@ -1288,7 +2946,8 @@ mv_sin  ld    a,(pagvis)     ; parcial: sobre la pagina visible
         call  fila
         ld    a,(cursor)
         call  fila
-        jp    contador
+        call  contador
+        jp    pie
 
 pintalista
         ld    a,(top)
@@ -1642,47 +3301,46 @@ compon  cp    32
         jr    c,cp_ok
 cp_sus  ld    a,63
 cp_ok   sub   32
-        ld    l,a
-        ld    h,0
-        add   hl,hl
-        add   hl,hl
-        add   hl,hl
-        ld    bc,GDESC
-        add   hl,bc          ; descriptor del glifo
-        ld    a,e            ; BC = 20 * desplazamiento
-        add   a,a
-        add   a,a
         ld    c,a
-        add   a,a
-        add   a,a
-        add   a,c
-        ld    c,a
-        ld    b,0
+        ld    a,e
+        ld    (gs),a
+        ld    a,d
+        ld    (gb),a
         ld    a,(pfinv)
         or    a
         jr    nz,cp_inv
-        ld    a,(hl)         ; glifo desde su primera linea con tinta
-        inc   hl
-        push  hl
-        ld    h,(hl)
-        ld    l,a
-        add   hl,bc
-        ex    (sp),hl
-        inc   hl
-        ld    c,(hl)         ; BC = 80 * primera linea
-        inc   hl
-        ld    b,(hl)
-        inc   hl
-        ld    a,(hl)         ; lineas con tinta
+        ld    a,c
+        call  gdatos         ; HL = datos del glifo
+        ret   z              ; sin tinta
+        ld    a,(gk)         ; los del desplazamiento: s x 2 x lineas mas alla
+        add   a,a
+        ld    e,a
+        ld    d,0
+        ld    a,(gs)
         or    a
-        jr    z,cp_nada
+        jr    z,cq2
+        ld    b,a
+cq1     add   hl,de
+        djnz  cq1
+cq2     push  hl
+        ld    a,(gf)         ; destino: linebuf + byte + 80 x primera linea
+        add   a,a
+        ld    e,a
+        ld    d,0
+        ld    hl,x80
+        add   hl,de
+        ld    e,(hl)
+        inc   hl
+        ld    d,(hl)
         ld    hl,linebuf
-        add   hl,bc
-        ld    c,d
-        ld    b,0
-        add   hl,bc
-        ex    de,hl          ; DE = destino
-        pop   hl             ; HL = glifo
+        add   hl,de
+        ld    a,(gb)
+        ld    e,a
+        ld    d,0
+        add   hl,de
+        ex    de,hl
+        pop   hl
+        ld    a,(gk)
         ld    b,a
         ld    a,(pfpm)
         ld    c,a
@@ -1708,36 +3366,27 @@ cp1     ld    a,(hl)
 cp2     ex    de,hl
         djnz  cp1
         ret
-cp_nada pop   hl
-        ret
 
-cp_inv  push  bc             ; inverso: la celda menos el glifo, entera
-        ld    bc,6
-        add   hl,bc
-        ld    a,(hl)
-        inc   hl
-        ld    h,(hl)
-        ld    l,a
-        pop   bc
-        add   hl,bc
-        push  hl
-        ld    a,e
+cp_inv  ld    a,c            ; inverso: la celda menos el glifo, entera
+        call  glifo10
+        ld    a,(gs)
         add   a,a
-        ld    l,a
-        ld    h,0
-        ld    bc,CELDAS
-        add   hl,bc
+        ld    e,a
+        ld    d,0
+        ld    hl,CELDAS
+        add   hl,de
         ld    a,(hl)
         ld    (cel0),a
         inc   hl
         ld    a,(hl)
         ld    (cel1),a
+        ld    a,(gb)
+        ld    e,a
+        ld    d,0
         ld    hl,linebuf
-        ld    c,d
-        ld    b,0
-        add   hl,bc
+        add   hl,de
         ex    de,hl
-        pop   hl
+        ld    hl,g20
         ld    a,(cel0)
         ld    c,a
         ld    b,10
@@ -1763,6 +3412,63 @@ cp3     ld    a,(hl)
 cp4     ex    de,hl
         djnz  cp3
         ret
+
+; --- A = glifo (caracter - 32): HL = sus datos, (gf) y (gk). Z si no
+;     tiene tinta ---
+gdatos  ld    l,a
+        ld    h,0
+        add   hl,hl
+        add   hl,hl
+        ld    de,GDESC
+        add   hl,de
+        ld    e,(hl)
+        inc   hl
+        ld    d,(hl)
+        inc   hl
+        ld    a,(hl)
+        ld    (gf),a
+        inc   hl
+        ld    a,(hl)
+        ld    (gk),a
+        ex    de,hl
+        or    a
+        ret
+
+; --- el glifo A entero en g20, con el desplazamiento (gs): 10 lineas de
+;     2 bytes, a cero las que no tienen tinta ---
+glifo10 call  gdatos
+        push  hl
+        ld    hl,g20
+        ld    b,20
+g10a    ld    (hl),0
+        inc   hl
+        djnz  g10a
+        pop   hl
+        ld    a,(gk)
+        or    a
+        ret   z
+        add   a,a
+        ld    c,a
+        ld    b,0            ; BC = 2 x lineas
+        ld    a,(gs)
+        or    a
+        jr    z,g10c
+g10b    add   hl,bc
+        dec   a
+        jr    nz,g10b
+g10c    push  hl
+        ld    a,(gf)
+        add   a,a
+        ld    e,a
+        ld    d,0
+        ld    hl,g20
+        add   hl,de
+        ex    de,hl
+        pop   hl
+        ldir
+        ret
+
+x80     dw    0,80,160,240,320,400,480,560,640,720
 
 px5     ld    l,a            ; HL = 5 * A
         ld    h,0
@@ -1862,29 +3568,19 @@ putc    push  hl
         cpl
         ld    (stage+1),a
 
-        ld    a,(carac)      ; glifo: GLIFOS + (4 * caracter + s) * 20
+        ld    a,(carac)      ; el glifo entero, ya desplazado, en g20
         cp    32
         jr    c,pc_sus
         cp    128
         jr    c,pc_ok
 pc_sus  ld    a,63
 pc_ok   sub   32
-        ld    l,a
-        ld    h,0
-        add   hl,hl
-        add   hl,hl
+        push  af
         ld    a,(shf)
-        or    l
-        ld    l,a
-        add   hl,hl
-        add   hl,hl
-        ld    e,l
-        ld    d,h
-        add   hl,hl
-        add   hl,hl
-        add   hl,de
-        ld    de,GLIFOS
-        add   hl,de
+        ld    (gs),a
+        pop   af
+        call  glifo10
+        ld    hl,g20
 
         ld    de,stage+2
         ld    b,10
@@ -2011,13 +3707,17 @@ marco   call  rayav
         ld    c,FILA0+VISIBLE+3
         call  rayah
 
-        ld    b,2            ; titulo
-        ld    c,1
-        call  setpos
+        call  tlimpia        ; titulo, en el idioma elegido; el tramo
+        ld    hl,txtbuf      ; se escribe entero y no quedan restos del
+        ld    (txtp),hl      ; otro idioma
+        ld    a,T_TIT
+        call  tponid
         ld    hl,tabfic
         ld    (ptab),hl
-        ld    hl,titulo
-        call  putstr
+        ld    b,2
+        ld    c,1
+        ld    a,12
+        call  pfila
         ld    b,56
         ld    c,1
         call  setpos
@@ -2032,28 +3732,137 @@ marco   call  rayav
         ld    hl,tabama
         call  barra
 
-        ld    b,2            ; ayuda, dos lineas y dos columnas
+        ld    a,T_H1         ; ayuda: dos filas de cuatro columnas
         ld    c,FILA0+VISIBLE+1
-        call  setpos
+        call  ayufila
+        ld    a,T_H5
+        ld    c,FILA0+VISIBLE+2
+        call  ayufila
+        call  pieptr         ; en el pie de esta pagina, la ayuda
+        ld    (hl),0
+        ret
+
+; ---------------------------------------------------------------
+;  El pie: si el nombre elegido no cabe en la lista (sale cortado con
+;  ".."), se muestra entero en las dos lineas de la ayuda; si cabe,
+;  la ayuda. Solo se repinta cuando cambia, para no gastar tiempo en
+;  cada movimiento del cursor.
+; ---------------------------------------------------------------
+pie     ld    a,(nent)
+        or    a
+        jr    z,pi_ay
+        ld    a,(cursor)
+        call  entrada
+        ld    c,58           ; lo que cabe de un fichero
+        ld    a,(hl)
+        cp    62
+        jr    nz,pi1
+        inc   hl             ; una carpeta lleva '[' delante
+        dec   c
+pi1     call  strlen
+        cp    c
+        jr    c,pi_ay
+        jr    z,pi_ay
+        push  hl             ; largo: en dos lineas de 60
+        call  tlimpia
+        ld    hl,txtbuf
+        ld    (txtp),hl
+        pop   hl
+        push  hl
+        ld    b,60
+pi2     ld    a,(hl)
+        or    a
+        jr    z,pi3
+        call  pbuf
+        inc   hl
+        djnz  pi2
+pi3     ld    hl,tabama
+        ld    (ptab),hl
+        ld    b,2
+        ld    c,FILA0+VISIBLE+1
+        ld    a,60
+        call  pfila
+        call  tlimpia
+        ld    hl,txtbuf
+        ld    (txtp),hl
+        pop   hl
+        ld    de,60
+        call  strlen
+        cp    61
+        jr    c,pi5
+        add   hl,de
+        call  tpon
+pi5     ld    b,2
+        ld    c,FILA0+VISIBLE+2
+        ld    a,60
+        call  pfila
+        call  pieptr
+        ld    (hl),1
+        ret
+pi_ay   call  pieptr         ; la ayuda, si no esta ya
+        ld    a,(hl)
+        or    a
+        ret   z
+        ld    a,T_H1
+        ld    c,FILA0+VISIBLE+1
+        call  ayufila
+        ld    a,T_H5
+        ld    c,FILA0+VISIBLE+2
+        call  ayufila
+        call  pieptr
+        ld    (hl),0
+        ret
+
+; --- HL = el estado del pie de la pagina en la que se pinta ---
+pieptr  ld    hl,pieest
+        ld    a,(pagina)
+        or    a
+        ret   z
+        inc   hl
+        ret
+
+; --- una fila de ayuda: los textos A..A+3 cada 15 columnas, fila C ---
+ayufila push  bc
+        push  af
+        call  tlimpia
+        pop   af
+        ld    b,4
+        ld    c,0
+af1     push  bc
+        push  af
+        ld    a,c
+        call  tcol
+        pop   af
+        push  af
+        call  tponid
+        pop   af
+        inc   a
+        pop   bc
+        ld    d,a
+        ld    a,c
+        add   a,15
+        ld    c,a
+        ld    a,d
+        djnz  af1
         ld    hl,tabfic
         ld    (ptab),hl
-        ld    hl,ayuda1
-        call  putstr
-        ld    b,32
-        ld    c,FILA0+VISIBLE+1
-        call  setpos
-        ld    hl,ayuda2
-        call  putstr
+        pop   bc
         ld    b,2
-        ld    c,FILA0+VISIBLE+2
-        call  setpos
-        ld    hl,ayuda3
-        call  putstr
-        ld    b,32
-        ld    c,FILA0+VISIBLE+2
-        call  setpos
-        ld    hl,ayuda4
-        jp    putstr
+        ld    a,60
+        jp    pfila
+
+; --- el marco en las dos paginas: tras cambiar de idioma ---
+marcos  ld    a,(pagina)
+        push  af
+        ld    a,#80
+        ld    (pagina),a
+        call  marco
+        xor   a
+        ld    (pagina),a
+        call  marco
+        pop   af
+        ld    (pagina),a
+        ret
 
 ; --- ruta actual ---
 ; --- C = longitud de la ruta actual ---
@@ -2073,7 +3882,28 @@ barra   ld    (ptab),hl
         ld    a,92           ; '\\'
         jp    putc
 
-ruta    ld    hl,cmdpath
+ruta    ld    a,(enres)
+        or    a
+        jr    z,rt0
+        call  tlimpia        ; "Resultados: texto", con '+' si se corto
+        ld    hl,txtbuf
+        ld    (txtp),hl
+        ld    a,T_RES
+        call  tponid
+        ld    hl,bufbus
+        call  tpon
+        ld    a,(lleno)
+        or    a
+        jr    z,rtr1
+        ld    a,43
+        call  pbuf
+rtr1    ld    hl,tabdir
+        ld    (ptab),hl
+        ld    b,2
+        ld    c,3
+        ld    a,50
+        jp    pfila
+rt0     ld    hl,cmdpath
         call  m4cmd
         ld    hl,resp+3      ; acotada a 50 columnas: el contador
         ld    de,txtbuf      ; empieza en la 54
@@ -2117,9 +3947,14 @@ contador
         ld    a,8
         jp    pfila
 
+prtn16  ld    de,10000       ; HL, con cinco cifras
+        call  pn1
+        ld    de,1000
+        call  pn1
+        jr    pn0
 prtnum  ld    h,0
         ld    l,a
-        ld    de,100
+pn0     ld    de,100
         call  pn1
         ld    de,10
         call  pn1
@@ -2197,6 +4032,7 @@ redibuja
         call  ruta
         call  pintalista
         call  contador
+        call  pie
 
 flip    ld    a,(pagina)
         ld    (pagvis),a
@@ -2221,7 +4057,9 @@ limpia  ld    hl,#4000
         ldir
         ret
 
-leedir  call  leerdir
+leedir  xor   a              ; lo que se lista ya es una carpeta real
+        ld    (enres),a
+        call  leerdir
         jp    ordena
 
 leerdir ld    hl,cmdargs
@@ -2424,8 +4262,16 @@ lee_entrada
         jr    z,li_bus
         cp    102            ; f
         jr    z,li_bus
+        cp    71             ; G: buscar en toda la biblioteca
+        jp    z,li_busg
+        cp    103            ; g
+        jp    z,li_busg
         cp    76             ; L: abrir el disco sin lanzar nada
         jp    z,li_lst
+        cp    67             ; C: configuracion
+        jp    z,li_cfg
+        cp    99             ; c
+        jp    z,li_cfg
         cp    108            ; l
         jp    z,li_lst
         jp    li_joy         ; ya no alcanza un salto relativo
@@ -2444,6 +4290,10 @@ li_pu   ld    a,6
 li_pd   ld    a,7
         ret
 li_lst  ld    a,9
+        ret
+li_cfg  ld    a,10
+        ret
+li_busg ld    a,11
         ret
 li_bus  ld    a,8
         ret
@@ -2615,16 +4465,10 @@ tabfic  db    #0F,0          ; blanco: ficheros y textos
 tabama  db    #FF,0          ; amarillo
 tabsel  db    #FF,#FF        ; amarillo invertido: la seleccion
 raiz    db    "/ROMS",0
-txtbus  db    "Buscar: ",0
 barra0  db    "/",0
 nomm4   db    "M",'4'+#80   ; nombre RSX en formato del firmware
 
-titulo  db    "EXPLORADOR",0
 maquina db    "AUA",0
-ayuda1  db    "ARR/ABA: ELEGIR",0
-ayuda2  db    "FUEGO: ABRIR",0
-ayuda3  db    "IZQ/DER: PAGINADO",0
-ayuda4  db    "SALTAR: ATRAS",0
 vacio   db    0
 
 
@@ -2634,6 +4478,7 @@ vacio   db    0
 ; --- glifos de 5x10 ya desplazados (tools/fuente5.py --tabla) ---
 GLIFOS
         include "glifos5.inc"
+        include "teclado.inc"
 
 ; --- relleno hasta los 16 KB de la ROM ---
         defs  #4000-($-#C000),#FF

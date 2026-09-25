@@ -6,10 +6,14 @@ Explorador de ficheros en ROM para el **M4 Board**. Navega la microSD con
 joystick, muestra los nombres de fichero completos y **arranca los juegos
 directamente** al pulsar fuego sobre una imagen `.dsk`.
 
-![La v2 listando una carpeta](docs/v2-explorador.png)
+Se abre tecleando **`|E`** en BASIC (o `|EXPLOR`, su nombre largo). No
+necesita ningún fichero en la tarjeta, y el arranque automático al
+encender es opcional.
 
-*La v2 listando una carpeta. Captura generada con la misma fuente y la
-misma maquetación que usa la ROM.*
+![El explorador listando una carpeta](docs/v2-explorador.png)
+
+*Captura generada con la misma fuente y la misma maquetación que usa la
+ROM.*
 
 ## Por qué existe
 
@@ -20,34 +24,17 @@ línea: gasta un panel lateral fijo en la ayuda y le queda poco sitio.
 Este explorador mueve la ayuda al pie de pantalla y aprovecha el ancho
 entero para el nombre. Con el mismo hardware.
 
-## Dos versiones
+## Cómo es
 
-Hay dos ROMs. Se instalan igual, se manejan igual y usan los mismos
-ficheros BASIC; cambia cómo pintan la pantalla. **Instala solo una**:
-las dos se llaman con `|EXPLOR`.
+| | M4FE | Explorador |
+|---|---|---|
+| Modo | Mode 1, 40 col | Mode 1, **64 col** |
+| Nombre visible | ~13 caracteres | **58 caracteres** |
+| Juegos por página | — | 14 |
+| Ayuda | Panel lateral | Pie de pantalla |
+| Arranque de juegos | Entrar y elegir | **Directo sobre el `.dsk`** |
 
-| | M4FE | v1 | v2 |
-|---|---|---|---|
-| Modo | Mode 1, 40 col | Mode 1, 40 col | Mode 1, **64 col** |
-| Fuente | la del sistema | la del sistema | propia, 5×10 píxeles |
-| Nombre visible | ~13 caracteres | 37 caracteres | **58 caracteres** |
-| Juegos por página | — | 16 | 14 |
-| Colores | 4 | 4 | 4, los mismos que la v1 |
-| ROM | — | [`EXPLOR1.ROM`](build/EXPLOR1.ROM) (v1.1) | [`EXPLOR2.ROM`](build/EXPLOR2.ROM) (v2.1) |
-
-**Cuál elegir.** La v2, salvo que prefieras la letra del sistema: enseña
-58 caracteres de cada nombre frente a los 37 de la v1, y los nombres de
-las colecciones de juegos suelen ser largos (título, país, año, editor…).
-Los que no caben terminan en `..`.
-
-### v1: la letra del sistema
-
-Mode 1 a 40 columnas con la fuente de la ROM del CPC, que es la más
-nítida. Cada carácter ocupa dos bytes de pantalla.
-
-![La v1](docs/v1-explorador.png)
-
-### v2: 64 columnas con los colores de la v1
+### 64 columnas en Mode 1
 
 La idea de partida era pasar a Mode 2, que tiene 80 columnas, sin
 perder el color: Mode 2 solo tiene dos tintas, y conseguir más obliga a
@@ -55,18 +42,19 @@ reescribir la paleta mientras el haz baja por la pantalla. Funciona,
 pero solo mientras el programa está parado; cada vez que redibuja o lee
 la tarjeta, los colores saltan.
 
-La v2 se queda en **Mode 1** y gana columnas por la letra: una fuente
+Así que se queda en **Mode 1** y gana columnas por la letra: una fuente
 propia de 4 píxeles de ancho más uno de separación, con interlineado y
-descendentes de verdad. Los 4 colores son los de la v1, sin trucos de
-temporización, así que no hay nada que pueda parpadear.
+descendentes de verdad. Cuatro colores sin trucos de temporización, así
+que no hay nada que pueda parpadear.
 
 Por dentro:
 
 - **Letras que no encajan en bytes.** En Mode 1 un byte son 4 píxeles y
-  una letra de la v2 ocupa 5, así que casi siempre comparte byte con la
+  una letra ocupa 5, así que casi siempre comparte byte con la
   vecina. Los glifos se guardan ya desplazados en sus cuatro posiciones
-  posibles dentro del byte (7,5 KB de ROM), listos para combinarse con
-  una máscara de color.
+  posibles dentro del byte, listos para combinarse con una máscara de
+  color, y solo con las líneas que llevan tinta: una coma o un guion no
+  ocupan diez.
 - **Filas compuestas en RAM.** Cada fila se monta entera en un búfer y se
   copia a pantalla de una vez: no hay que leer la pantalla, que desde la
   ROM ni siquiera se puede en la página `#C000`, y solo se pintan las
@@ -77,8 +65,6 @@ Por dentro:
 
 La fuente se dibuja con `#` y `.` en [`tools/fuente5.py`](tools/fuente5.py):
 corregir una letra es cambiar su línea y regenerar el include.
-
-![El buscador de la v2](docs/v2-buscador.png)
 
 ## Qué hace
 
@@ -93,11 +79,19 @@ corregir una letra es cambiar su línea y regenerar el include.
 - **Joystick o teclado.** Cursores para elegir, izquierda y derecha para
   paginar, dos botones para entrar y volver.
 - **Ordenación alfabética**, con las carpetas agrupadas arriba.
-- **Buscador.** Pulsa `F`, escribe y salta a la primera coincidencia.
+- **Buscar en la carpeta o en toda la biblioteca.** `F` busca en la
+  carpeta y `G` en todas; el texto vale en cualquier parte del nombre,
+  sin distinguir mayúsculas. Se escribe con el teclado o, con el
+  joystick, en un teclado del 464 dibujado en pantalla.
+- **El nombre largo, entero.** Si un nombre no cabe en la línea, al
+  elegirlo se lee completo en el pie.
+- **En castellano o en inglés.** Con `C` se elige, y se recuerda.
 - **Sin parpadeo.** Doble búfer de pantalla: se dibuja en la página
   oculta y se conmuta el CRTC de un frame al siguiente.
-- **Arranque automático conmutable.** Enciendes y aparece; sales con ESC
-  y la máquina se reinicia sin él hasta que vuelvas a lanzarlo.
+- **Sin ficheros auxiliares.** `|E` desde BASIC, y el explorador
+  carga y arranca el juego él mismo.
+- **Arranque automático opcional.** Una línea en `AUTOEXEC.BAS` y sale al
+  encender; ESC te deja en BASIC.
 
 ## Controles
 
@@ -106,23 +100,55 @@ corregir una letra es cambiar su línea y regenerar el include.
 | Arriba / abajo | Elegir |
 | Izquierda / derecha | Página |
 | FUEGO 1 / ENTER | Abrir carpeta o **ejecutar juego** |
-| `L` / FUEGO 1 un segundo | Abrir el disco **sin lanzarlo**, para elegir a mano |
+| `L` / FUEGO 1 un segundo | Sobre un juego: abrirlo **sin lanzarlo**, para elegir a mano |
 | FUEGO 2 / DEL | Volver atrás |
-| `F` | Buscar |
-| ESC | Salir y reiniciar |
+| `F` | Buscar en esta carpeta (otra vez `F` y ENTER: la siguiente) |
+| `G` | Buscar en toda la biblioteca |
+| `C` | Configuración: idioma |
+| ESC | Volver a BASIC |
+
+### Buscar
+
+`F` y `G` abren una ventana con un teclado como el del 464. Con el
+joystick se elige tecla y FUEGO la pulsa; `RET` busca, `DEL` borra una
+letra, `CLR` todo, `ESC` cierra, y FUEGO 2 también borra. El teclado de
+verdad sirve igual: se escribe, ENTER busca y ESC cierra.
+
+- **`F`** salta a la siguiente entrada de la carpeta que contenga el
+  texto, dando la vuelta al final. El texto se queda escrito: `F` y
+  ENTER otra vez, la siguiente.
+- **`G`** recorre todas las carpetas desde `/ROMS` y enseña lo
+  encontrado como una carpeta más, con la ruta delante:
+  `R/Rally II (UK) (1985).dsk`. Fuego sobre un resultado lo abre o lo
+  lanza como siempre, y FUEGO 2 vuelve a donde estabas. Si no encuentra
+  nada, dice cuántas carpetas y ficheros ha mirado.
+
+### Configuración
+
+`C` abre la configuración. Por ahora, el idioma: castellano o inglés.
+Se guarda en `/EXPLOR.CFG`, en la raíz de la tarjeta, y se recuerda al
+volver a encender.
 
 ## Cómo arranca los juegos
 
-Un programa en ejecución no puede hacer que BASIC ejecute nada por sí
-mismo. La salida es la RSX con cadena por referencia. La ROM recibe `@a$`,
-deja ahí el fichero elegido —con el directorio ya puesto— y devuelve el
-control. **BASIC hace el `RUN`** en la línea siguiente:
+El explorador carga el fichero elegido y lo arranca él mismo, del mismo
+modo que la ROM del M4 ejecuta el `AUTOEXEC.BAS` al encender:
+
+- **Un BASIC** se carga en `#0170`, donde lo espera BASIC, se ajustan sus
+  punteros de fin de programa y se llama a la rutina de `RUN` de la ROM
+  de BASIC, con las direcciones de cada modelo (464, 664 y 6128).
+- **Un binario** se carga en su dirección y se salta a su arranque.
+- **Un BASIC guardado en ASCII**, sin cabecera, no se puede arrancar así:
+  el explorador vuelve a BASIC con el `RUN"…"` escrito para teclearlo.
+
+Las versiones anteriores dejaban el nombre en una variable y era BASIC el
+que hacía el `RUN`. Esa forma sigue funcionando, para no romper las
+instalaciones que la usan:
 
 ```basic
 10 a$=SPACE$(40)
 20 |EXPLOR,@a$
 30 IF a$<>"" THEN RUN a$
-40 END
 ```
 
 ### Qué cargador elige
@@ -164,49 +190,43 @@ con el directorio del disco; en un cartucho, ahí hay código.
 
 ## Instalación
 
-1. Sube la ROM que elijas —[`build/EXPLOR2.ROM`](build/EXPLOR2.ROM) o
-   [`build/EXPLOR1.ROM`](build/EXPLOR1.ROM)— a un slot libre del M4 (del
-   8 al 15 en un 6128; en un 464 hace falta ROM baja modificada). Página
-   **Roms** de la interfaz web, botón **Upload** del slot.
+1. Sube [`build/EXPLOR2.ROM`](build/EXPLOR2.ROM) a un slot libre del M4
+   (del 8 al 15 en un 6128; en un 464 hace falta ROM baja modificada).
+   Página **Roms** de la interfaz web, botón **Upload** del slot.
 2. Reinicia el M4 y comprueba con `|M4HELP` que aparece en su slot.
-3. Copia `bas/A.BAS` y `bas/E.BAS` a la raíz de la microSD.
-4. En el CPC:
-
-       RUN"A
-       SAVE"AUTOEXEC.BAS
-       RUN"E
-
-El `SAVE` **debe hacerse en el CPC**: el arranque automático necesita el
-fichero tokenizado y con cabecera AMSDOS, que es justo lo que produce el
-`SAVE` del propio intérprete. Su manual también lo indica.
-
-Para cambiar de versión basta con subir la otra ROM al mismo slot: los
-ficheros BASIC valen para las dos.
+3. En BASIC, teclea `|E`.
 
 El slot donde viva la ROM del M4 se detecta solo, preguntando al firmware
 dónde está el comando `|M4`. Funciona con el 6, el 7 o donde lo tengas.
 
-## Arranque automático conmutable
+![La búsqueda en toda la biblioteca](docs/v2-buscador.png)
 
-El estado vive en el fichero `EXPON` de la tarjeta, que guarda un `1` o
-un `0`. Todo en BASIC, la ROM no interviene.
+## Arranque automático (opcional)
 
-| Situación | Efecto |
-|---|---|
-| Enciendes con `EXPON`=1 | Sale el explorador |
-| Sales con ESC | `EXPON`=0 y la máquina **se reinicia** |
-| Tras ese reinicio | BASIC limpio, sin explorador |
-| `RUN"E` | Vuelve y reactiva el arranque |
+Para que salga al encender, graba en el CPC un `AUTOEXEC.BAS` de una
+línea:
 
-Guarda un valor en lugar de existir o no a propósito: con la comprobación
-por existencia, AMSDOS imprime su `not found` **antes** de que `ON ERROR`
-pueda atraparlo y ensucia el arranque.
+    NEW
+    10 |E
+    SAVE"AUTOEXEC.BAS"
+
+El `SAVE` **debe hacerse en el CPC**: el arranque automático necesita el
+fichero tokenizado y con cabecera AMSDOS, que es justo lo que produce el
+`SAVE` del propio intérprete.
+
+Con ESC sales a BASIC sin reiniciar, y `RUN` vuelve a abrirlo. Para
+quitar el arranque automático, borra `AUTOEXEC.BAS` de la tarjeta.
+
+Si tenías el arranque de las versiones anteriores (`A.BAS`, `E.BAS` y el
+fichero `EXPON`), sigue funcionando con esta ROM, pero solo lanza el
+explorador al encender si `EXPON` vale 1, y salir con ESC lo pone a 0.
+`|E` no lo toca. Para pasarte al nuevo, graba el `AUTOEXEC.BAS` de
+arriba encima del antiguo; `A.BAS`, `E.BAS` y `EXPON` ya no hacen falta.
 
 ## Configuración
 
 Arranca en `/ROMS` y no deja subir por encima. Para otra carpeta, cambia
-la cadena `raiz` en `src/v1/explorador.asm` o `src/v2/explorador.asm`;
-el tope se ajusta solo, porque mide la ruta de partida en vez de usar un
+la cadena `raiz` en `src/v2/explorador.asm`; el tope se ajusta solo, porque mide la ruta de partida en vez de usar un
 número fijo. Si esa carpeta no existe, se queda en la raíz.
 
 ## Compilar
@@ -218,31 +238,58 @@ Necesitas **rasm**, de Roudoudou — ver [`tools/rasm.md`](tools/rasm.md).
 M4=192.168.1.42 ./tools/rom.sh v2 12 # y ademas la sube al slot 12
 ```
 
-Si cambias la fuente de la v2, regenera antes sus glifos:
+Si cambias la fuente o el teclado de la búsqueda, regenera antes sus
+tablas:
 
 ```bash
 python3 tools/fuente5.py > src/v2/glifos5.inc
+python3 tools/teclado.py > src/v2/teclado.inc
 ```
+
+Con `RESET=s` el script reinicia además el M4 al terminar la subida, sin
+preguntar.
 
 ## Limitaciones conocidas
 
-- **El buscador solo mira en la carpeta actual**, no en toda la
-  biblioteca.
-- **Volver al explorador desde un juego es reiniciar.** Sin perder la
-  partida haría falta una NMI.
+- **La búsqueda en toda la biblioteca** guarda como mucho 130
+  resultados; si hay más, se para y lo indica con un `+` tras el texto.
+- **Volver desde un juego es reiniciar**, con el botón CPC Reset del M4.
+  Con el arranque automático sale el explorador; sin él, BASIC. Volver
+  sin perder la partida exigiría una NMI.
+- **Los cargadores BASIC guardados en ASCII** no se arrancan solos:
+  el explorador deja escrito el `RUN"…"` para teclearlo.
 - **La heurística del cargador fallará en algún disco.** Cuando pase, el
   listado interno es la red de seguridad.
 - **130 entradas por directorio** como máximo.
 - **Los cartuchos de verdad no se lanzan**, ni siquiera en un Plus: el M4
   tiene `|CTRUP` y `|CTR` para eso, pero sin un Plus no se ha podido
   probar.
-- **v2: los nombres de más de 58 caracteres se cortan** con `..` al final.
+- **Los nombres de más de 58 caracteres se cortan** con `..` al final.
   En la M, la W, la m y la w los trazos llegan a la columna de separación
   y rozan la letra siguiente: con 4 píxeles no caben sus tres patas.
 - **Probado en un CPC 464** con ROM baja de 6128 y el M4 en el slot 6.
   Si lo usas en otra configuración, cuenta qué tal.
 
 ## Historial
+
+**v2.2**
+
+- `|E` (o `|EXPLOR`) sin nada más: el explorador carga y arranca el
+  juego él mismo, sin `A.BAS` ni `E.BAS`. El arranque automático pasa
+  a ser una línea opcional en `AUTOEXEC.BAS`, y ESC vuelve a BASIC sin
+  reiniciar.
+- La forma anterior, `|EXPLOR,@a$`, sigue funcionando.
+- Búsqueda en toda la biblioteca con `G`, además de la de la carpeta con
+  `F`. Las dos buscan el texto en cualquier parte del nombre.
+- Ventana de búsqueda con un teclado del 464 en pantalla, para escribir
+  con el joystick, dibujado como el de CPC Doctor.
+- Castellano o inglés, a elegir con `C` y guardado en `/EXPLOR.CFG`.
+- El nombre que no cabe en la línea se lee entero en el pie.
+- `L` solo actúa sobre juegos.
+- El M4 rechaza rutas absolutas como `/ROMS/R` si no se está en la raíz:
+  ahora se cambia de carpeta por partes.
+- La versión de 40 columnas queda **descontinuada**. Su última versión
+  es la [v1.1](../../releases/tag/v1.1).
 
 **v1.1 y v2.1** — lo mismo en las dos:
 

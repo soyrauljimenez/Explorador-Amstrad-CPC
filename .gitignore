@@ -1,6 +1,5 @@
-# Intermedios del ensamblado. Se publican solo las ROMs listas para instalar.
+# Intermedios del ensamblado. Se publica solo la ROM lista para instalar.
 build/*
-!build/EXPLOR1.ROM
 !build/EXPLOR2.ROM
 rasmoutput.sym
 
@@ -10,3 +9,6 @@ tools/rasm
 
 # Datos de la tarjeta de desarrollo: personales, no del proyecto.
 m4/
+
+# Cache de Python de las herramientas.
+__pycache__/
