@@ -9,6 +9,8 @@ tools/rasm
 
 # Datos de la tarjeta de desarrollo: personales, no del proyecto.
 m4/
+# Última IP de la M4 encontrada por tools/buscam4.sh
+.m4ip
 
 # Cache de Python de las herramientas.
 __pycache__/

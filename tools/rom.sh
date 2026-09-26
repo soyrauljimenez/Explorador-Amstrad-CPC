@@ -3,6 +3,7 @@
 #
 #   ./tools/rom.sh                       solo ensamblar: build/EXPLOR2.ROM
 #   M4=192.168.1.42 ./tools/rom.sh v2 12 ensamblar y subir al slot 12
+#   M4=auto ./tools/rom.sh v2 12         igual, buscando la placa en la red
 #   RESET=s M4=...                       y reiniciar el M4 sin preguntar
 #
 # La subida manda 'slotnum' antes que el fichero: el M4 procesa los
@@ -29,6 +30,10 @@ TAM=$(wc -c < "$OUT" | tr -d ' ')
 echo "ensamblada: $OUT"
 
 [ -n "$M4" ] || exit 0
+if [ "$M4" = "auto" ]; then
+    M4=$("$DIR/tools/buscam4.sh") || exit 1
+    echo "M4 en $M4"
+fi
 
 curl -s -m 40 -F "slotnum=$SLOT" -F "slotname=$NOMBRE" \
      -F "uploadedfile=@$OUT;filename=$(basename "$OUT")" \

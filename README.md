@@ -241,6 +241,7 @@ Necesitas **rasm**, de Roudoudou — ver [`tools/rasm.md`](tools/rasm.md).
 ```bash
 ./tools/rom.sh v2                    # ensambla build/EXPLOR2.ROM
 M4=192.168.1.42 ./tools/rom.sh v2 12 # y ademas la sube al slot 12
+M4=auto ./tools/rom.sh v2 12        # igual, buscando la M4 en la red
 ```
 
 Si cambias la fuente o el teclado de la búsqueda, regenera antes sus
