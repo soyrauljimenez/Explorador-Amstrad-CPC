@@ -236,9 +236,29 @@ servir como cartucho en un Plus.
 
 1. Sube [`build/EXPLOR2.ROM`](build/EXPLOR2.ROM) a un slot libre del M4
    (del 8 al 15 en un 6128; en un 464 hace falta ROM baja modificada).
-   Página **Roms** de la interfaz web, botón **Upload** del slot.
+   Página **Roms** de la interfaz web, botón **Upload** del slot. Sin
+   WiFi, se puede grabar desde la microSD: ver más abajo.
 2. Reinicia el M4 y comprueba con `|M4HELP` que aparece en su slot.
 3. En BASIC, teclea `|E`.
+
+### Sin WiFi, desde la microSD
+
+El M4 puede grabar en un slot una ROM que esté en la tarjeta, con su
+comando `|ROMUP`. Se hace una sola vez: la ROM queda en la memoria del
+M4 igual que subida por la web.
+
+1. Copia `EXPLOR2.ROM` en la raíz de la microSD desde el ordenador.
+2. Con la tarjeta en el M4, teclea en el CPC:
+
+       a$="EXPLOR2.ROM":|ROMUP,@a$,12
+
+   El 12 es el slot; vale cualquiera libre. En un 6128 también sirve
+   `|ROMUP,"EXPLOR2.ROM",12`; en un 464 el nombre tiene que ir en una
+   variable con `@`, porque su BASIC no pasa cadenas a estos comandos.
+3. Reinicia el M4 (o apaga y enciende), comprueba con `|M4HELP` que
+   aparece y abre el explorador con `|E`.
+
+Para actualizarlo, lo mismo con la ROM nueva sobre el mismo slot.
 
 El slot donde viva la ROM del M4 se detecta solo, preguntando al firmware
 dónde está el comando `|M4HELP`. Funciona con el 6, el 7 o donde lo
