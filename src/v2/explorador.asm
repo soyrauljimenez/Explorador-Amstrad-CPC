@@ -38,6 +38,9 @@ T_KTXT  equ 28
 T_KAY1  equ 29               ; dos lineas de ayuda
 T_NCAR  equ 31               ; "Sin resultados: N carpetas, M ficheros"
 T_NFIC  equ 32
+T_JUNT  equ 33               ; "Juntando discos: "
+T_NOJUN equ 34
+T_CPRF  equ 35               ; .cpr con disco en formato datos
 VISIBLE equ 14               ; filas de 10 lineas: caben 14 entradas
 FILA0   equ 5                ; primera fila de lista (base 0)
 COL0    equ 1                ; primera columna de lista
@@ -160,6 +163,13 @@ gcar    equ   ENTBUF+6113    ; busqueda en todo: carpetas recorridas
 gfic    equ   ENTBUF+6114    ; y entradas leidas (2)
 snades  equ   ENTBUF+6116    ; |SNA: descriptor de la cadena (3)
 snapar  equ   ENTBUF+6119    ; y el parametro que apunta a el (2)
+mulpre  equ   ENTBUF+6121    ; varios discos: largo del nombre hasta la cara,
+mulid   equ   ENTBUF+6122    ; la cara elegida (A o 1),
+mulk    equ   ENTBUF+6123    ; la otra cara que se busca,
+mulcnt  equ   ENTBUF+6124    ; y cuantas se han visto
+mulvue  equ   ENTBUF+6125    ; vueltas de |DSKX, por si no acaba
+mulnam  equ   ENTBUF+6130    ; el disco elegido, a salvo de la lista (91)
+mulotr  equ   ENTBUF+6221    ; la otra cara que se va a extraer (91)
 KBY0    equ   58             ; lineas de las filas 3 a 10 de la ventana
 KBY1    equ   137
 m4ram   equ RAM              ; copia ejecutable del protocolo
@@ -167,7 +177,7 @@ m4ram   equ RAM              ; copia ejecutable del protocolo
         org   #C000
 
         db    1              ; ROM de fondo
-        db    2,3,0          ; version 2.3
+        db    2,4,0          ; version 2.4
         dw    tabla
         jp    init           ; entrada 0: inicializacion
         jp    explor         ; entrada 1: |EXPLOR
@@ -220,10 +230,10 @@ ex1     ld    (descr),hl     ; descriptor de a$, o 0
 
 ;  El slot del M4 varia de una maquina a otra (el manual recomienda
 ;  el 7 en los 464, el 6 en los 6128). Se localiza preguntando al
-;  firmware en que ROM vive el comando |M4.
+;  firmware en que ROM vive |M4HELP (un |M4 a secas no existe).
         ld    hl,nomm4
         ld    de,nomram
-        ld    bc,2
+        ld    bc,6
         ldir
         ld    a,M4ROM        ; valor por defecto si no aparece
         ld    (m4slot),a
@@ -417,15 +427,20 @@ en_dsk  push  hl
 en_ds2  ld    de,extcpr      ; un .cpr solo si lleva un disco dentro
         call  esext
         jr    nc,en_ds3
-        call  esconv         ; A: 0 disco, 1 cartucho, 2 no se abre
-        or    a
+        call  esconv         ; A: 0 disco, 1 cartucho, 2 no se abre,
+        or    a              ; 3 disco en un formato que el M4 no lee
         jr    z,en_ds3
+        cp    3
+        jr    z,en_cpf
         cp    1
         jr    nz,en_mal
         ld    a,T_CART
         call  texto
         jr    en_av
-en_ds3  push  hl
+en_ds3  ld    a,(manual)     ; con L o fuego largo, el disco tal cual
+        or    a
+        call  z,multi        ; si es de varios, solo vuelve si falla
+        push  hl
         call  cd_a
         pop   hl
         ld    a,(resp+3)     ; #FF = no ha podido entrar (el mismo
@@ -443,6 +458,9 @@ en_lis  xor   a              ; sin cargador, o a mano: el contenido
         call  ruta
         call  redibuja
         jp    bucle
+en_cpf  ld    a,T_CPRF
+        call  texto
+        jr    en_av
 en_mal  ld    a,T_ILEG       ; imagen que no se puede abrir
         call  texto
 en_av   call  aviso
@@ -488,6 +506,282 @@ es3     pop   bc
         ld    ix,snapar      ; un parametro, la cadena
         ld    a,1
         jp    #001B          ; KL FAR PCHL: |SNA,"nombre"
+
+;  Juegos de varios discos. Con el juego en marcha el explorador ya no
+;  existe, y el M4 no cambia de disco sin reiniciar el CPC. Asi que al
+;  lanzar la primera cara ("(Face A)", "(Side 1)", "(Disk 1 of 2)") se
+;  juntan los ficheros de todas en /EXPLOR, con el |DSKX del propio M4,
+;  y se lanza desde ahi: cuando el juego pide la otra cara, sus ficheros
+;  ya estan. Vale para los que cargan ficheros por su nombre, que son la
+;  mayoria; los que leen sectores sueltos no.
+;
+; --- HL = el disco elegido. Si es de varios, no vuelve: lanza desde
+;     /EXPLOR. Si no, o si algo falla, vuelve con HL = su nombre ---
+multi   ld    de,extdsk
+        call  esext
+        ret   nc
+        ld    de,mulnam      ; la lista se va a reemplazar
+        call  copia0
+        ld    hl,mulnam
+        call  escara
+        jp    nc,mu_hl
+        ld    a,#FF          ; cuantas otras caras hay en la carpeta
+        ld    (mulk),a
+        call  otrak
+        ld    a,(mulcnt)
+        or    a
+        jp    z,mu_hl
+        ld    (mulk),a
+        ld    hl,cmdpath     ; la carpeta del juego, para volver
+        call  m4cmd
+        ld    hl,resp+3
+        ld    de,walkpath
+        call  copia0
+        ld    hl,rtmp        ; /EXPLOR, vacia
+        call  cd_a
+        ld    a,(resp+3)
+        cp    #FF
+        jr    nz,mu1
+        ld    hl,barra0      ; no existe: se crea
+        call  cd_a
+        ld    a,#10          ; C_MAKEDIR
+        ld    hl,rtmp+1
+        call  m4nom
+        ld    hl,rtmp
+        call  cd_a
+        ld    a,(resp+3)
+        cp    #FF
+        jp    z,mu_no
+mu1     ld    hl,cmdargs     ; el primer fichero fuera, y otra vez
+        call  m4cmd
+mu2     ld    hl,cmdrd
+        call  m4cmd
+        cp    3
+        jr    c,mu4          ; vacia
+        ld    hl,resp+3
+        call  enmasc
+        ld    a,(resp+3)
+        cp    62
+        jr    z,mu2          ; una carpeta se deja
+        ld    a,#0E          ; C_ERASEFILE
+        ld    hl,resp+3
+        call  m4nom
+        ld    a,(resp+3)
+        or    a
+        jr    z,mu1
+        jp    mu_no          ; no se deja borrar
+mu4     ld    hl,walkpath    ; las otras caras, de la ultima a la primera
+        call  cd_a
+        ld    a,(resp+3)
+        cp    #FF
+        jp    z,mu_no
+        ld    hl,mulk
+        dec   (hl)
+        ld    a,(hl)
+        cp    #FF
+        jr    z,mu5
+        call  otrak
+        jp    nc,mu_no
+        ld    hl,resp+3      ; su nombre, aparte: el listado del M4 se
+        ld    de,mulotr      ; queda a medias, y con un listado abierto
+        call  copia0         ; |DSKX no extrae nada. Se cierra entrando
+        ld    hl,walkpath    ; otra vez en la carpeta
+        call  cd_a
+        ld    hl,mulotr
+        call  dskx
+        jp    nc,mu_no
+        jr    mu4
+mu5     ld    hl,walkpath
+        call  cd_a
+        ld    hl,mulnam      ; y la elegida al final: si un fichero
+        call  dskx           ; esta en dos caras, vale el suyo
+        jp    nc,mu_no
+        ld    hl,rtmp
+        call  cd_a
+        ld    a,(resp+3)
+        cp    #FF
+        jp    z,mu_no
+        call  leedir
+        ld    hl,mulnam      ; el nombre del disco, para elegir cargador
+        ld    de,cdname
+        call  copia0
+        call  buscar
+        jp    c,lanza
+mu_no   ld    a,T_NOJUN      ; no ha salido: se avisa y se abre el
+        call  texto          ; disco elegido tal cual
+        call  aviso
+mu_mal  ld    hl,walkpath    ; no ha salido: el disco elegido, tal cual
+        call  cd_a
+mu_hl   ld    hl,mulnam
+        ret
+
+; --- carry si HL es la primera cara de un juego de varias: un '('
+;     seguido de FACE, SIDE, CARA, DISK o DISC y de A o 1. Deja en
+;     (mulpre) el largo hasta la cara y en (mulid) la cara ---
+escara  push  hl
+        ld    d,h
+        ld    e,l
+        ld    (ebpos),de
+xc1     ld    a,(hl)
+        or    a
+        jr    z,xc_no
+        inc   hl
+        cp    40             ; '('
+        jr    nz,xc1
+        ld    de,txface
+        ld    c,5
+xc2     push  hl
+        push  de
+        ld    b,4
+        call  empieza
+        jr    c,xc3
+        pop   de
+        pop   hl
+        inc   de
+        inc   de
+        inc   de
+        inc   de
+        dec   c
+        jr    nz,xc2
+        jr    xc1
+xc3     pop   de
+        pop   de
+xc4     ld    a,(hl)         ; los espacios hasta la cara
+        cp    32
+        jr    nz,xc5
+        inc   hl
+        jr    xc4
+xc5     call  mayus
+        cp    65             ; 'A'
+        jr    z,xc6
+        cp    49             ; '1'
+        jr    nz,xc1
+xc6     ld    (mulid),a
+        inc   hl             ; "(Face ABC)" no es una cara
+        ld    a,(hl)
+        dec   hl
+        call  alnum
+        jr    c,xc1
+        ld    de,(ebpos)
+        or    a
+        sbc   hl,de
+        ld    a,l
+        ld    (mulpre),a
+        pop   hl
+        scf
+        ret
+xc_no   pop   hl
+        or    a
+        ret
+
+; --- carry si HL (una entrada de READDIR) es otra cara del mismo
+;     juego que mulnam: .dsk, el mismo nombre hasta la cara y otra cara ---
+esotra  ld    a,(hl)
+        cp    62
+        jr    z,eo_no
+        ld    de,extdsk
+        call  esext
+        jr    nc,eo_no
+        ld    de,mulnam
+        ld    a,(mulpre)
+        ld    b,a
+eo1     ld    a,(de)
+        call  mayus
+        ld    c,a
+        ld    a,(hl)
+        call  mayus
+        cp    c
+        jr    nz,eo_no
+        inc   hl
+        inc   de
+        djnz  eo1
+        ld    a,(hl)
+        call  mayus
+        or    a
+        jr    z,eo_no
+        ld    c,a
+        ld    a,(mulid)
+        cp    c
+        jr    z,eo_no
+        scf
+        ret
+eo_no   or    a
+        ret
+
+; --- la otra cara numero (mulk) de la carpeta actual: carry y su
+;     nombre en resp+3. Sin carry si no hay tantas; (mulcnt) = las vistas ---
+otrak   ld    hl,cmdargs
+        call  m4cmd
+        xor   a
+        ld    (mulcnt),a
+ok1     ld    hl,cmdrd
+        call  m4cmd
+        cp    3
+        ret   c
+        ld    hl,resp+3
+        call  enmasc
+        ld    hl,resp+3
+        call  esotra
+        jr    nc,ok1
+        ld    a,(mulk)
+        ld    b,a
+        ld    a,(mulcnt)
+        cp    b
+        scf
+        ret   z
+        inc   a
+        ld    (mulcnt),a
+        jr    ok1
+
+; --- |DSKX,"HL","/EXPLOR": el M4 saca un fichero del disco a la
+;     carpeta en cada vuelta, hasta que contesta que no queda ninguno ---
+dskx    push  hl             ; las dos cadenas, seguidas: el destino
+        ld    hl,rtmp        ; primero. |DSKX,"disco","destino" desde
+        ld    de,cdname      ; BASIC las recibe al reves (el ultimo
+        call  copia0         ; parametro es el primero) y la ROM del M4
+        inc   de             ; las manda tal cual
+        pop   hl
+        call  copia0
+        ex    de,hl          ; tamano: hasta el ultimo 0
+        ld    de,cdbuf
+        or    a
+        sbc   hl,de
+        ld    a,l
+        ld    (cdbuf),a
+        ld    a,#30          ; C_DSKEXT
+        ld    (cdbuf+1),a
+        ld    a,#43
+        ld    (cdbuf+2),a
+        ld    a,64           ; mas ficheros no caben en un disco
+        ld    (mulvue),a
+dx1     ld    hl,cdbuf
+        call  m4cmd
+        ld    a,(resp+3)     ; 0 = ha sacado uno y sigue; otra cosa, se
+        or    a              ; acabo. Si ha ido bien se ve despues: en
+        scf                  ; /EXPLOR tiene que haber un cargador
+        ret   nz
+        ld    hl,txtbuf      ; "Juntando discos: " y lo que diga el M4
+        ld    (txtp),hl
+        ld    a,T_JUNT
+        call  tponid
+        ld    hl,resp+4
+        ld    b,32
+dx2     ld    a,(hl)
+        or    a
+        jr    z,dx3
+        call  pbuf
+        inc   hl
+        djnz  dx2
+dx3     xor   a
+        call  pbuf
+        ld    hl,txtbuf
+        call  avisa
+        ld    hl,mulvue
+        dec   (hl)
+        jr    nz,dx1
+        ret
+
+rtmp    db    "/EXPLOR",0
 
 ; --- L: solo sobre un juego (.dsk o .cpr), que se abre sin lanzar
 ;     nada. Sobre una carpeta o un fichero suelto no hace nada ---
@@ -696,8 +990,14 @@ po1     ld    a,(nent)
         ld    b,c
         call  igualn
         pop   bc
+        jr    c,po7
+        call  titcifras      ; o el titulo y cifras: OUTRUN1 en "Out Run"
         jr    nc,po8
-        ld    a,c
+        ld    c,a
+        ld    a,(mejorl)
+        cp    c
+        jr    nc,po8
+po7     ld    a,c
         ld    (mejorl),a
         pop   bc
         push  bc
@@ -712,6 +1012,42 @@ po9     ld    a,(mejorl)
         ld    a,(mejori)
         call  entrada
         scf
+        ret
+
+; --- carry si candbuf es el titulo entero seguido solo de cifras
+;     (OUTRUN1 en "Out Run", el 1 de la primera parte); A = largo del
+;     titulo, que es lo que cuenta como coincidencia ---
+titcifras
+        ld    hl,titbuf
+        call  strlen
+        cp    3
+        ccf
+        ret   nc             ; titulos de menos de tres, no
+        ld    b,a
+        ld    c,a
+        ld    de,candbuf
+tc1     ld    a,(de)
+        cp    (hl)
+        jr    nz,tc_no
+        inc   hl
+        inc   de
+        djnz  tc1
+        ld    a,(de)         ; sobra algo, y solo cifras
+        or    a
+        jr    z,tc_no
+tc2     ld    a,(de)
+        or    a
+        jr    z,tc_si
+        cp    48
+        jr    c,tc_no
+        cp    58
+        jr    nc,tc_no
+        inc   de
+        jr    tc2
+tc_si   ld    a,c
+        scf
+        ret
+tc_no   or    a
         ret
 
 ; --- en la clase (clase), el primero que no sea de trampas; si todos lo
@@ -965,7 +1301,7 @@ ec2     ld    a,(resp+3)
         ld    de,#C024+40
         or    a
         sbc   hl,de
-        jr    c,ec_car       ; demasiado corto para un banco 3
+        jp    c,ec_car       ; demasiado corto para un banco 3
 ec3     ld    hl,fbuf+4      ; C_SEEK al banco 3
         ld    (hl),#24
         inc   hl
@@ -989,7 +1325,50 @@ ec3     ld    hl,fbuf+4      ; C_SEEK al banco 3
         jr    nz,ec_car
         call  ecmira         ; se decide antes de cerrar: el cierre
         jr    nc,ec_car      ; pisa la respuesta
+;  La tabla de disco que lleva el cartucho (banco 2, en &0A43 de sus
+;  datos): el M4 solo lee bien los de formato sistema, con dos pistas
+;  reservadas. Con los de formato datos lista basura. Solo se juzga si
+;  ahi hay de verdad una tabla: 36 registros por pista, bloques de 1 KB
+        ld    hl,fbuf+4      ; C_SEEK a la tabla
+        ld    (hl),#67
+        inc   hl
+        ld    (hl),#8A
+        inc   hl
+        ld    (hl),0
+        inc   hl
+        ld    (hl),0
+        ld    a,#05
+        ld    b,7
+        call  fpaq
+        ld    hl,fbuf+4      ; C_READ de 16 bytes
+        ld    (hl),16
+        inc   hl
+        ld    (hl),0
+        ld    a,#02
+        ld    b,5
+        call  fpaq
         xor   a
+        ld    hl,resp+3      ; 0 = leido
+        or    (hl)
+        ld    a,0
+        jr    nz,ec_fin      ; no se puede leer: no se juzga
+        ld    hl,(resp+4)    ; SPT = 36
+        ld    de,36
+        or    a
+        sbc   hl,de
+        ld    a,0
+        jr    nz,ec_fin
+        ld    hl,(resp+6)    ; BSH = 3, BLM = 7
+        ld    de,#0703
+        or    a
+        sbc   hl,de
+        ld    a,0
+        jr    nz,ec_fin
+        ld    a,(resp+17)    ; OFF: pistas reservadas
+        cp    2
+        ld    a,0
+        jr    z,ec_fin
+        ld    a,3            ; formato datos: el M4 no lo lee bien
         jr    ec_fin
 ec_car  ld    a,1
 ec_fin  push  af
@@ -1051,6 +1430,8 @@ txtrain db    "TRAIN"
 txface  db    "FACE"
 txside  db    "SIDE"
 txcara  db    "CARA"
+txdisk  db    "DISK"         ; seguidas: 'escara' las recorre en orden
+txdsc   db    "DISC"
 
 ; --- aviso en la linea de la ruta: HL = mensaje ---
 aviso   call  avisa          ; lo pinta cada version a su manera
@@ -1107,6 +1488,15 @@ ev3     dec   hl
         jr    ev_no
 ev4     cp    46             ; '.'
         jr    z,ev_si
+        pop   hl             ; y sin punto ninguno, como sale de una
+        push  hl             ; carpeta normal (/EXPLOR): "SUPERWON"
+ev5     ld    a,(hl)
+        or    a
+        jr    z,ev_si
+        cp    46
+        jr    z,ev_no
+        inc   hl
+        jr    ev5
 ev_no   pop   hl
         or    a
         ret
@@ -1193,7 +1583,7 @@ cd_a    ld    a,(hl)
         cp    47
         jr    z,cdabs
 cd_rel  ld    a,#08          ; C_CD, escrito a mano: cdbuf esta en RAM
-        ld    (cdbuf+1),a
+m4nom   ld    (cdbuf+1),a    ; cualquier orden con una cadena, A = orden
         ld    a,#43
         ld    (cdbuf+2),a
         ld    de,cdname
@@ -2860,14 +3250,14 @@ txes    dw    es_tit
         dw    es_cfg,es_idi,es_val,es_ci1,es_ci2,es_ci3,es_ci4
         dw    es_no1,es_no2
         dw    es_res,es_busg,es_nada,es_busc
-        dw    es_pbus,es_pbusg,es_ktxt,es_kay1,es_kay2,es_ncar,es_nfic
+        dw    es_pbus,es_pbusg,es_ktxt,es_kay1,es_kay2,es_ncar,es_nfic,es_junt,es_nojun,es_cprf
 txen    dw    en_tit
         dw    en_h1,en_h2,en_h3,en_h4,en_h5,en_h6,en_h7,en_h8
         dw    en_bus,en_cart,en_ileg,en_run
         dw    en_cfg,en_idi,en_val,en_ci1,en_ci2,en_ci3,en_ci4
         dw    en_no1,en_no2
         dw    en_res,en_busg,en_nada,en_busc
-        dw    en_pbus,en_pbusg,en_ktxt,en_kay1,en_kay2,en_ncar,en_nfic
+        dw    en_pbus,en_pbusg,en_ktxt,en_kay1,en_kay2,en_ncar,en_nfic,en_junt,en_nojun,en_cprf
 
 es_tit  db    "EXPLORADOR",0
 es_h1   db    "ARR/ABA ELEGIR",0
@@ -2899,6 +3289,9 @@ es_pbus db    "BUSCAR EN ESTA CARPETA",0
 es_pbusg db   "BUSCAR EN TODA LA BIBLIOTECA",0
 es_ktxt db    "Texto: ",0
 es_kay1 db    "Joystick: elige tecla y pulsa FUEGO. SALTAR borra.",0
+es_junt db    "Juntando discos: ",0
+es_nojun db   "No se pudieron juntar los discos",0
+es_cprf db    "Este .cpr no lo lee bien el M4",0
 es_ncar db    " carpetas, ",0
 es_nfic db    " ficheros",0
 es_kay2 db    "Teclado: escribe, ENTER busca, ESC sale.",0
@@ -2933,6 +3326,9 @@ en_pbus db    "FIND IN THIS FOLDER",0
 en_pbusg db   "FIND IN THE WHOLE LIBRARY",0
 en_ktxt db    "Text: ",0
 en_kay1 db    "Joystick: pick a key and press FIRE. FIRE2 deletes.",0
+en_junt db    "Merging disks: ",0
+en_nojun db   "Could not merge the disks",0
+en_cprf db    "The M4 cannot read this .cpr",0
 en_ncar db    " folders, ",0
 en_nfic db    " files",0
 en_kay2 db    "Keyboard: type, ENTER finds, ESC exits.",0
@@ -4514,7 +4910,8 @@ tabama  db    #FF,0          ; amarillo
 tabsel  db    #FF,#FF        ; amarillo invertido: la seleccion
 raiz    db    "/ROMS",0
 barra0  db    "/",0
-nomm4   db    "M",'4'+#80   ; nombre RSX en formato del firmware
+nomm4   db    "M4HEL",'P'+#80  ; |M4HELP: el M4 no tiene un |M4, y este
+                               ; comando solo lo tiene el M4
 
 maquina db    "AUA",0
 vacio   db    0

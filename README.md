@@ -78,6 +78,9 @@ corregir una letra es cambiar su línea y regenerar el include.
 - **Juegos en `.cpr`.** Los juegos de disco empaquetados como cartucho
   se abren y se lanzan como un `.dsk`, también en un CPC clásico.
 - **Snapshots `.sna`.** Fuego sobre uno y lo carga el M4.
+- **Juegos de varios discos.** Fuego sobre la primera cara y el
+  explorador junta los ficheros de todas antes de lanzarlo: cuando el
+  juego pide la otra cara, ya la tiene.
 - **Joystick o teclado.** Cursores para elegir, izquierda y derecha para
   paginar, dos botones para entrar y volver.
 - **Ordenación alfabética**, con las carpetas agrupadas arriba.
@@ -151,6 +154,29 @@ modo que la ROM del M4 ejecuta el `AUTOEXEC.BAS` al encender:
   que `|SNA,"JUEGO.SNA"` desde BASIC pero sin el `|CD` previo: el
   explorador ya está en su carpeta. Admite nombres largos.
 
+### Juegos de varios discos
+
+Con el juego en marcha, el explorador ya no está: el juego ocupa la
+memoria. Y el M4 no cambia de disco sin reiniciar el CPC. Así que el
+cambio de cara se prepara antes de lanzar.
+
+Al pulsar fuego sobre la **primera cara** de un juego —un nombre con
+*(Face A)*, *(Side 1)*, *(Cara A)* o *(Disk 1 of 2)*—, el explorador
+busca en la misma carpeta las demás caras del mismo juego, vacía la
+carpeta `/EXPLOR` de la tarjeta, le pide al M4 que extraiga en ella los
+ficheros de todas con su `|DSKX` y lanza el juego desde ahí. Mientras lo
+hace, arriba pone *Juntando discos*. Cuando el juego pide la otra cara,
+sus ficheros ya están.
+
+- Si un fichero aparece en dos caras, vale el de la elegida.
+- Una cara B elegida directamente, o `L` y el fuego largo, abren el
+  disco tal cual, como siempre.
+- Si no se pueden juntar, lo avisa y abre la cara elegida.
+
+Vale para los juegos que cargan sus ficheros por el nombre, que son la
+mayoría. Los protegidos, que leen el disco sector a sector o con
+formatos propios, no tienen ficheros que juntar.
+
 Las versiones anteriores dejaban el nombre en una variable y era BASIC el
 que hacía el `RUN`. Esa forma sigue funcionando, para no romper las
 instalaciones que la usan:
@@ -171,7 +197,8 @@ más de uno decide así:
 2. Si el disco es una **cara B** (*Face B*, *Side B*, *Cara B* o `2`),
    no lanza nada y enseña la lista: esas caras las pide el juego.
 3. El que **se llama como el juego**: `COMMANDO` en *Commando*,
-   `MOLECULE` en *Molecule Man*. Con tres letras como mínimo.
+   `MOLECULE` en *Molecule Man*, o el título seguido de cifras, como
+   `OUTRUN1` en *Out Run*. Con tres letras como mínimo.
 4. El primero que **no sea de trampas** (`CHEAT`, `POKE`, `TRAIN`). Si
    son más de cinco `.BIN`, enseña la lista: ahí no se acierta a ciegas.
 
@@ -198,6 +225,13 @@ que devuelve el contenido del último disco que leyó. Así que el
 explorador mira dentro del fichero: en los convertidos, el banco 3 empieza
 con el directorio del disco; en un cartucho, ahí hay código.
 
+Además, el cartucho lleva una tabla con el formato del disco, y el M4
+solo lee bien los de **formato sistema** (dos pistas reservadas). Con
+uno de formato datos enseña una lista sin sentido, así que el explorador
+lo avisa: *Este .cpr no lo lee bien el M4*. Copiar en ese cartucho la
+tabla de uno de formato sistema lo arregla para el M4, pero deja de
+servir como cartucho en un Plus.
+
 ## Instalación
 
 1. Sube [`build/EXPLOR2.ROM`](build/EXPLOR2.ROM) a un slot libre del M4
@@ -207,7 +241,8 @@ con el directorio del disco; en un cartucho, ahí hay código.
 3. En BASIC, teclea `|E`.
 
 El slot donde viva la ROM del M4 se detecta solo, preguntando al firmware
-dónde está el comando `|M4`. Funciona con el 6, el 7 o donde lo tengas.
+dónde está el comando `|M4HELP`. Funciona con el 6, el 7 o donde lo
+tengas.
 
 ![La búsqueda en toda la biblioteca](docs/v2-buscador.png)
 
@@ -278,6 +313,9 @@ preguntar.
   arranca en un 464 con ROM baja de 6128, pero se cuelga en cuanto el
   juego llama al firmware. No es cosa del explorador: lanzado por el
   propio M4 hace lo mismo.
+- **Los discos protegidos** que leen sectores hablando directamente con
+  la controladora de disco no funcionan en el M4, que no la tiene. Esto
+  afecta tanto a un disco como a un juego de varios.
 - **Los cartuchos de verdad no se lanzan**, ni siquiera en un Plus: el M4
   tiene `|CTRUP` y `|CTR` para eso, pero sin un Plus no se ha podido
   probar.
@@ -288,6 +326,19 @@ preguntar.
   Si lo usas en otra configuración, cuenta qué tal.
 
 ## Historial
+
+**v2.4**
+
+- Juegos de varios discos: al lanzar la primera cara se juntan los
+  ficheros de todas en `/EXPLOR` y el juego encuentra la otra cara sin
+  cambiar de disco.
+- Aviso con los `.cpr` cuyo disco va en formato datos, que el M4 no lee
+  bien.
+- El cargador puede llamarse como el juego seguido de cifras
+  (`OUTRUN1` en *Out Run*). No cambia la elección en ningún disco que
+  ya funcionara.
+- Corregido: el slot del M4 no se detectaba (se buscaba un `|M4` que no
+  existe) y se usaba siempre el 6. Ahora se busca `|M4HELP`.
 
 **v2.3**
 
