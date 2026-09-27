@@ -4,7 +4,8 @@ por Raul Jimenez · licencia MIT
 
 Explorador de ficheros en ROM para el **M4 Board**. Navega la microSD con
 joystick, muestra los nombres de fichero completos y **arranca los juegos
-directamente** al pulsar fuego sobre una imagen `.dsk`.
+directamente** al pulsar fuego sobre una imagen `.dsk` o un snapshot
+`.sna`.
 
 Se abre tecleando **`|E`** en BASIC (o `|EXPLOR`, su nombre largo). No
 necesita ningún fichero en la tarjeta, y el arranque automático al
@@ -76,6 +77,7 @@ corregir una letra es cambiar su línea y regenerar el include.
   segundo, abre el disco y enseña sus ficheros sin lanzar nada.
 - **Juegos en `.cpr`.** Los juegos de disco empaquetados como cartucho
   se abren y se lanzan como un `.dsk`, también en un CPC clásico.
+- **Snapshots `.sna`.** Fuego sobre uno y lo carga el M4.
 - **Joystick o teclado.** Cursores para elegir, izquierda y derecha para
   paginar, dos botones para entrar y volver.
 - **Ordenación alfabética**, con las carpetas agrupadas arriba.
@@ -145,6 +147,9 @@ modo que la ROM del M4 ejecuta el `AUTOEXEC.BAS` al encender:
 - **Un binario** se carga en su dirección y se salta a su arranque.
 - **Un BASIC guardado en ASCII**, sin cabecera, no se puede arrancar así:
   el explorador vuelve a BASIC con el `RUN"…"` escrito para teclearlo.
+- **Un snapshot `.sna`** se le pasa al `|SNA` del propio M4, lo mismo
+  que `|SNA,"JUEGO.SNA"` desde BASIC pero sin el `|CD` previo: el
+  explorador ya está en su carpeta. Admite nombres largos.
 
 Las versiones anteriores dejaban el nombre en una variable y era BASIC el
 que hacía el `RUN`. Esa forma sigue funcionando, para no romper las
@@ -267,6 +272,12 @@ preguntar.
 - **La heurística del cargador fallará en algún disco.** Cuando pase, el
   listado interno es la red de seguridad.
 - **130 entradas por directorio** como máximo.
+- **Un snapshot solo funciona en una máquina con las mismas ROMs** que
+  la que lo sacó: guarda la RAM entera, y con ella tablas del firmware
+  que apuntan a la ROM de esa máquina. Uno sacado en un 464 original
+  arranca en un 464 con ROM baja de 6128, pero se cuelga en cuanto el
+  juego llama al firmware. No es cosa del explorador: lanzado por el
+  propio M4 hace lo mismo.
 - **Los cartuchos de verdad no se lanzan**, ni siquiera en un Plus: el M4
   tiene `|CTRUP` y `|CTR` para eso, pero sin un Plus no se ha podido
   probar.
@@ -277,6 +288,10 @@ preguntar.
   Si lo usas en otra configuración, cuenta qué tal.
 
 ## Historial
+
+**v2.3**
+
+- Snapshots `.sna`: fuego sobre uno y lo carga el `|SNA` del M4.
 
 **v2.2**
 

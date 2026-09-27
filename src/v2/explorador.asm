@@ -158,6 +158,8 @@ kpen    equ   ENTBUF+6111    ; color del recuadro
 kmode   equ   ENTBUF+6112    ; 1 = es la elegida
 gcar    equ   ENTBUF+6113    ; busqueda en todo: carpetas recorridas
 gfic    equ   ENTBUF+6114    ; y entradas leidas (2)
+snades  equ   ENTBUF+6116    ; |SNA: descriptor de la cadena (3)
+snapar  equ   ENTBUF+6119    ; y el parametro que apunta a el (2)
 KBY0    equ   58             ; lineas de las filas 3 a 10 de la ventana
 KBY1    equ   137
 m4ram   equ RAM              ; copia ejecutable del protocolo
@@ -165,7 +167,7 @@ m4ram   equ RAM              ; copia ejecutable del protocolo
         org   #C000
 
         db    1              ; ROM de fondo
-        db    2,2,0          ; version 2.2
+        db    2,3,0          ; version 2.3
         dw    tabla
         jp    init           ; entrada 0: inicializacion
         jp    explor         ; entrada 1: |EXPLOR
@@ -392,6 +394,9 @@ entrar  ld    a,(cursor)
 en_0    ld    a,(hl)
         cp    62             ; '>' = directorio
         jr    z,en_dir
+        ld    de,extsna      ; instantanea: la carga el M4
+        call  esext
+        jp    c,en_sna
         call  esdisk
         jr    c,en_dsk       ; .dsk: arrancar el juego directamente
         jp    lanza          ; fichero suelto: ejecutarlo
@@ -442,6 +447,47 @@ en_mal  ld    a,T_ILEG       ; imagen que no se puede abrir
         call  texto
 en_av   call  aviso
         jp    bucle
+
+;  .sna: una instantanea de la memoria. No hay cargador que elegir: se
+;  le pasa al |SNA del propio M4, como |SNA,"JUEGO.SNA" desde BASIC.
+;  Lee nombres largos y trabaja en la carpeta actual, que ya es la del
+;  fichero. Si no puede, el M4 lo dice y se queda en BASIC.
+en_sna  ld    de,cdname      ; el nombre en RAM y su descriptor, como
+        ld    b,0            ; los que BASIC pasa a un RSX
+es1     ld    a,(hl)
+        or    a
+        jr    z,es2
+        ld    (de),a
+        inc   hl
+        inc   de
+        inc   b
+        jr    es1
+es2     ld    a,b
+        ld    (snades),a
+        ld    hl,cdname
+        ld    (snades+1),hl
+        ld    hl,snades
+        ld    (snapar),hl
+        ld    hl,nomsna      ; KL FIND COMMAND exige el nombre en RAM
+        ld    de,nomram
+        ld    bc,3
+        ldir
+        ld    hl,nomram
+        call  #BCD4          ; HL = rutina, C = su ROM
+        jp    nc,en_mal      ; un M4 sin |SNA
+        push  hl
+        push  bc
+        call  restaura
+        ld    hl,(descr)     ; con a$, vacia: BASIC no ejecuta nada
+        ld    a,h
+        or    l
+        jr    z,es3
+        ld    (hl),0
+es3     pop   bc
+        pop   hl
+        ld    ix,snapar      ; un parametro, la cadena
+        ld    a,1
+        jp    #001B          ; KL FAR PCHL: |SNA,"nombre"
 
 ; --- L: solo sobre un juego (.dsk o .cpr), que se abre sin lanzar
 ;     nada. Sobre una carpeta o un fichero suelto no hace nada ---
@@ -1111,6 +1157,8 @@ extbas  db    "BAS"
 extdsk  db    "DSK"
 extrom  db    "ROM"
 extcpr  db    "CPR"
+extsna  db    "SNA"
+nomsna  db    "SN",'A'+#80   ; |SNA del M4, en formato del firmware
 extbin  db    "BIN"
 
 ;  No se sube por encima de la carpeta de partida: se compara la
